@@ -1,13 +1,11 @@
-/* =========================================
+/* ==========================================
    FocusFlow — Smart Student Study Planner
-   Part 1: Setup, storage, profile, subjects
-========================================= */
+   Corrected JavaScript
+========================================== */
 
 "use strict";
 
-const $ = (selector, root = document) => root.querySelector(selector);
-const $$ = (selector, root = document) =>
-  Array.from(root.querySelectorAll(selector));
+/* ---------- Storage ---------- */
 
 const STORAGE = {
   profile: "focusFlowProfileV2",
@@ -16,6 +14,29 @@ const STORAGE = {
   theme: "focusFlowThemeV2",
   stats: "focusFlowStatsV2"
 };
+
+const $ = (selector, root = document) =>
+  root.querySelector(selector);
+
+const $$ = (selector, root = document) =>
+  [...root.querySelectorAll(selector)];
+
+function load(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function save(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error("Storage error:", error);
+  }
+}
 
 const DEFAULT_SUBJECTS = [
   "College",
@@ -35,62 +56,34 @@ const state = {
     lastStudyDate: "",
     streak: 0
   }),
-  date: startOfDay(new Date()),
+  page: "today",
   calendar: "day",
+  date: new Date(),
   filter: "all",
   sort: "date",
   search: "",
+  selectedSubject: null,
   editingTask: null,
   selectedFocusTask: null,
   timerMode: "focus",
-  timerSeconds: 25 * 60,
-  timerRemaining: 25 * 60,
+  timerSeconds: 1500,
+  timerRemaining: 1500,
   timerRunning: false,
-  timerInterval: null,
-  sessionCount: 0
+  timerInterval: null
 };
 
-function load(key, fallback) {
-  try {
-    const value = localStorage.getItem(key);
-    return value === null ? structuredCloneSafe(fallback) : JSON.parse(value);
-  } catch (error) {
-    console.warn("Storage read failed:", key, error);
-    return structuredCloneSafe(fallback);
-  }
-}
-
-function structuredCloneSafe(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function save(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.warn("Storage save failed:", key, error);
-    showToast("Browser storage save nahi ho paya.");
-  }
-}
-
-function saveTasks() {
-  save(STORAGE.tasks, state.tasks);
-}
-
-function saveSubjects() {
-  save(STORAGE.subjects, state.subjects);
-}
-
-function saveStats() {
-  save(STORAGE.stats, state.stats);
-}
+/* ---------- Helpers ---------- */
 
 function pad(number) {
   return String(number).padStart(2, "0");
 }
 
 function dateKey(date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join("-");
 }
 
 function startOfDay(date) {
@@ -102,83 +95,88 @@ function startOfDay(date) {
 function parseDate(value) {
   if (!value) return startOfDay(new Date());
 
-  const parts = value.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) {
-    return startOfDay(new Date());
+  if (value instanceof Date) {
+    return startOfDay(value);
   }
 
-  return new Date(parts[0], parts[1] - 1, parts[2]);
+  if (typeof value === "string") {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (match) {
+      return new Date(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3])
+      );
+    }
+  }
+
+  const result = new Date(value);
+
+  return Number.isNaN(result.getTime())
+    ? startOfDay(new Date())
+    : startOfDay(result);
 }
 
-function formatDate(date, options = {}) {
-  return new Intl.DateTimeFormat("en-IN", options).format(date);
+function dateOffset(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return startOfDay(result);
 }
 
 function escapeHTML(value = "") {
-  return String(value).replace(/[&<>"']/g, char => ({
+  return String(value).replace(/[&<>"']/g, character => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
     "'": "&#39;"
-  })[char]);
+  })[character]);
 }
 
 function makeId() {
   return window.crypto?.randomUUID?.() ||
-    `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function showToast(message) {
-  const toast = $("#toast");
-  if (!toast) {
-    console.log(message);
-    return;
-  }
-
-  toast.textContent = message;
-  toast.classList.add("show", "visible", "active");
-  toast.setAttribute("role", "status");
-
-  clearTimeout(showToast.timeout);
-  showToast.timeout = setTimeout(() => {
-    toast.classList.remove("show", "visible", "active");
-  }, 2600);
-}
-
-function sameDay(first, second) {
-  return dateKey(parseDate(first)) === dateKey(parseDate(second));
-}
-
-function isToday(date) {
-  return dateKey(date) === dateKey(new Date());
-}
-
-function getTaskDate(task) {
-  return parseDate(task.date);
-}
-
-function getTaskDuration(task) {
-  const value = Number(task.duration);
-  return Number.isFinite(value) && value > 0 ? value : 30;
-}
-
-function getTaskTime(task) {
-  return task.time || "09:00";
-}
-
-function getTaskDateTime(task) {
-  const date = getTaskDate(task);
-  const [hours, minutes] = getTaskTime(task).split(":").map(Number);
-  date.setHours(hours || 0, minutes || 0, 0, 0);
-  return date;
+    `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function isCompleted(task) {
   return task.status === "completed" || task.completed === true;
 }
 
+function sameDay(first, second) {
+  return dateKey(parseDate(first)) === dateKey(parseDate(second));
+}
+
+function showToast(message) {
+  const toast = $("#toast");
+  const messageElement = $("#toastMessage");
+
+  if (!toast) {
+    console.log(message);
+    return;
+  }
+
+  if (messageElement) {
+    messageElement.textContent = message;
+  } else {
+    toast.textContent = message;
+  }
+
+  toast.classList.add("show", "visible", "active");
+
+  clearTimeout(showToast.timeout);
+
+  showToast.timeout = setTimeout(() => {
+    toast.classList.remove("show", "visible", "active");
+  }, 2500);
+}
+
+/* ---------- Task Data ---------- */
+
 function normalizeTask(task) {
+  const completed =
+    task.status === "completed" || task.completed === true;
+
   return {
     id: task.id || makeId(),
     title: String(task.title || "Untitled task"),
@@ -186,24 +184,45 @@ function normalizeTask(task) {
     priority: ["low", "medium", "high"].includes(task.priority)
       ? task.priority
       : "medium",
-    date: task.date || dateKey(new Date()),
+    date: typeof task.date === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(task.date)
+      ? task.date
+      : dateKey(new Date()),
     time: task.time || "09:00",
     duration: Number(task.duration) || 30,
     repeat: task.repeat || "none",
     notes: task.notes || "",
     inbox: Boolean(task.inbox),
-    status: isCompleted(task) ? "completed" : "pending",
-    completed: isCompleted(task),
-    createdAt: task.createdAt || new Date().toISOString(),
-    completedAt: task.completedAt || null
+    status: completed ? "completed" : "pending",
+    completed,
+    completedAt: task.completedAt || null,
+    focusMinutes: Number(task.focusMinutes) || 0
   };
+}
+
+function saveTasks() {
+  save(STORAGE.tasks, state.tasks);
+}
+
+function getTodayTasks() {
+  return state.tasks.filter(task =>
+    sameDay(task.date, new Date()) && !task.inbox
+  );
+}
+
+function getTaskDateTime(task) {
+  const date = parseDate(task.date);
+  const parts = (task.time || "09:00").split(":").map(Number);
+
+  date.setHours(parts[0] || 0, parts[1] || 0, 0, 0);
+
+  return date;
 }
 
 /* ---------- Profile ---------- */
 
 function renderProfile() {
   const name = state.profile.name || "Student";
-  const firstName = name.trim().split(/\s+/)[0] || "Student";
   const initials = name.trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -211,63 +230,62 @@ function renderProfile() {
     .join("")
     .toUpperCase();
 
-  const welcome = $("#welcomeEyebrow");
-  if (welcome) welcome.textContent = `WELCOME BACK, ${firstName.toUpperCase()}`;
-
-  const title = $("#pageTitle");
-  if (title && !title.dataset.customTitle) {
-    title.textContent = "Your day, organized.";
+  if ($("#welcomeEyebrow")) {
+    $("#welcomeEyebrow").textContent =
+      `WELCOME BACK, ${name.split(/\s+/)[0].toUpperCase()}`;
   }
 
-  const avatar = $("#profileAvatar");
-  if (avatar) avatar.textContent = initials || "S";
+  if ($("#profileAvatar")) {
+    $("#profileAvatar").textContent = initials;
+  }
 
-  const sidebarName = $("#sidebarName");
-  if (sidebarName) sidebarName.textContent = name;
+  if ($("#sidebarName")) {
+    $("#sidebarName").textContent = name;
+  }
 
-  const sidebarAvatar = $("#sidebarAvatar");
-  if (sidebarAvatar) sidebarAvatar.textContent = initials || "S";
+  if ($("#sidebarAvatar")) {
+    $("#sidebarAvatar").textContent = initials;
+  }
 
-  const screen = $("#nameScreen");
-  const shell = $("#appShell");
-
-  if (screen && shell) {
+  if ($("#nameScreen") && $("#appShell")) {
     const needsName = !state.profile.name.trim();
-    screen.hidden = !needsName;
-    shell.hidden = needsName;
+
+    $("#nameScreen").hidden = !needsName;
+    $("#appShell").hidden = needsName;
   }
 }
 
 function initializeProfile() {
-  const form = $("#nameForm");
   const input = $("#userName");
 
-  if (input) input.value = state.profile.name || "";
+  if (input) {
+    input.value = state.profile.name || "";
+  }
 
-  form?.addEventListener("submit", event => {
+  $("#nameForm")?.addEventListener("submit", event => {
     event.preventDefault();
 
     const name = input?.value.trim();
+
     if (!name) {
-      showToast("Apna naam enter karo.");
-      input?.focus();
+      showToast("Please enter your name.");
       return;
     }
 
     state.profile.name = name;
     save(STORAGE.profile, state.profile);
+
     renderProfile();
-    showToast(`Welcome, ${name.split(/\s+/)[0]}!`);
+    showToast("Welcome to FocusFlow!");
   });
 
   $("#changeNameBtn")?.addEventListener("click", () => {
-    const name = prompt("Apna naam enter karo:", state.profile.name || "");
-    if (name === null) return;
+    const name = prompt(
+      "Enter your name:",
+      state.profile.name || ""
+    );
 
-    if (!name.trim()) {
-      showToast("Naam blank nahi ho sakta.");
-      return;
-    }
+    if (!name?.trim()) return;
 
     state.profile.name = name.trim();
     save(STORAGE.profile, state.profile);
@@ -279,12 +297,9 @@ function initializeProfile() {
 
 /* ---------- Subjects ---------- */
 
-function normalizeSubjectName(name) {
-  return String(name || "").trim().replace(/\s+/g, " ");
-}
-
 function renderSubjects() {
   const nav = $("#subjectNav");
+
   if (nav) {
     nav.innerHTML = state.subjects.map(subject => {
       const count = state.tasks.filter(task =>
@@ -292,7 +307,8 @@ function renderSubjects() {
       ).length;
 
       return `
-        <button class="subject-nav-item" type="button"
+        <button type="button"
+          class="subject-nav-item"
           data-subject-filter="${escapeHTML(subject)}">
           <span class="subject-dot"></span>
           <span>${escapeHTML(subject)}</span>
@@ -303,135 +319,132 @@ function renderSubjects() {
   }
 
   const select = $("#taskSubject");
+
   if (select) {
     const previous = select.value;
 
-    select.innerHTML = state.subjects.map(subject =>
-      `<option value="${escapeHTML(subject)}">${escapeHTML(subject)}</option>`
-    ).join("");
+    select.innerHTML = state.subjects.map(subject => `
+      <option value="${escapeHTML(subject)}">
+        ${escapeHTML(subject)}
+      </option>
+    `).join("");
 
-    if (state.subjects.includes(previous)) select.value = previous;
+    if (state.subjects.includes(previous)) {
+      select.value = previous;
+    }
   }
 
   const suggestions = $("#subjectSuggestions");
+
   if (suggestions) {
-    suggestions.innerHTML = state.subjects.map(subject =>
-      `<option value="${escapeHTML(subject)}"></option>`
-    ).join("");
+    suggestions.innerHTML = state.subjects.map(subject => `
+      <option value="${escapeHTML(subject)}"></option>
+    `).join("");
   }
 
   updateSidebarCounts();
 }
 
 function initializeSubjects() {
-  $("#addSubjectBtn")?.addEventListener("click", () => {
-    openSubjectModal();
-  });
+  $("#addSubjectBtn")?.addEventListener("click", openSubjectModal);
 
   $("#subjectForm")?.addEventListener("submit", event => {
     event.preventDefault();
 
     const input = $("#newSubjectName");
-    const name = normalizeSubjectName(input?.value);
+    const name = input?.value.trim().replace(/\s+/g, " ");
 
     if (!name) {
-      showToast("Subject ka naam likho.");
+      showToast("Enter a subject name.");
       return;
     }
 
-    if (state.subjects.some(item =>
-      item.toLowerCase() === name.toLowerCase()
+    if (state.subjects.some(subject =>
+      subject.toLowerCase() === name.toLowerCase()
     )) {
-      showToast("Ye subject pehle se hai.");
+      showToast("Subject already exists.");
       return;
     }
 
     state.subjects.push(name);
-    saveSubjects();
+    save(STORAGE.subjects, state.subjects);
+
     renderSubjects();
     closeModal("subjectModal");
 
     if (input) input.value = "";
-    showToast("Subject add ho gaya.");
+
+    showToast("Subject added.");
   });
 
   $("#subjectNav")?.addEventListener("click", event => {
     const button = event.target.closest("[data-subject-filter]");
+
     if (!button) return;
 
-    state.search = "";
-    state.filter = "all";
     state.selectedSubject = button.dataset.subjectFilter;
+    state.search = "";
 
-    const search = $("#searchInput");
-    if (search) search.value = "";
+    if ($("#searchInput")) {
+      $("#searchInput").value = "";
+    }
 
-    renderTasks();
-    showToast(`${state.selectedSubject} tasks`);
+    renderTaskList();
   });
 
   renderSubjects();
 }
 
 function openSubjectModal() {
-  const modal = $("#subjectModal");
-  if (!modal) {
-    const name = prompt("New subject ka naam:");
-    if (!name) return;
-
-    const clean = normalizeSubjectName(name);
-    if (!clean || state.subjects.includes(clean)) {
-      showToast("Subject invalid hai ya pehle se hai.");
-      return;
-    }
-
-    state.subjects.push(clean);
-    saveSubjects();
-    renderSubjects();
+  if ($("#subjectModal")) {
+    openModal("subjectModal");
+    $("#newSubjectName")?.focus();
     return;
   }
 
-  openModal("subjectModal");
-  $("#newSubjectName")?.focus();
+  const name = prompt("Enter subject name:");
+
+  if (!name?.trim()) return;
+
+  const cleanName = name.trim();
+
+  if (state.subjects.includes(cleanName)) {
+    showToast("Subject already exists.");
+    return;
+  }
+
+  state.subjects.push(cleanName);
+  save(STORAGE.subjects, state.subjects);
+  renderSubjects();
 }
 
 /* ---------- Theme ---------- */
 
+function applyTheme(theme) {
+  const dark = theme === "dark";
+
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.documentElement.classList.toggle("dark", dark);
+  document.body.classList.toggle("dark", dark);
+
+  save(STORAGE.theme, dark ? "dark" : "light");
+}
+
 function initializeTheme() {
-  const savedTheme = load(STORAGE.theme, "light");
-  applyTheme(savedTheme);
+  applyTheme(load(STORAGE.theme, "light"));
 
   $("#themeToggle")?.addEventListener("click", () => {
-    const current = document.documentElement.dataset.theme ||
-      (document.body.classList.contains("dark") ? "dark" : "light");
+    const current = document.documentElement.dataset.theme;
 
     applyTheme(current === "dark" ? "light" : "dark");
   });
 }
 
-function applyTheme(theme) {
-  const normalized = theme === "dark" ? "dark" : "light";
-
-  document.documentElement.dataset.theme = normalized;
-  document.documentElement.classList.toggle("dark", normalized === "dark");
-  document.body.classList.toggle("dark", normalized === "dark");
-  save(STORAGE.theme, normalized);
-
-  const button = $("#themeToggle");
-  if (button) {
-    button.setAttribute(
-      "aria-label",
-      normalized === "dark" ? "Switch to light mode" : "Switch to dark mode"
-    );
-    button.title = normalized === "dark" ? "Light mode" : "Dark mode";
-  }
-}
-/* =========================================
-   Part 2: Modal handling and task management
-========================================= */
+/* ---------- Modals ---------- */
 
 function openModal(id) {
   const modal = document.getElementById(id);
+
   if (!modal) return;
 
   modal.classList.add("open");
@@ -441,6 +454,7 @@ function openModal(id) {
 
 function closeModal(id) {
   const modal = document.getElementById(id);
+
   if (!modal) return;
 
   modal.classList.remove("open");
@@ -459,7 +473,8 @@ function initializeModals() {
 
     if (closeButton) {
       const modal = closeButton.closest(".modal-backdrop");
-      if (modal?.id) closeModal(modal.id);
+
+      if (modal) closeModal(modal.id);
     }
 
     if (
@@ -470,6 +485,7 @@ function initializeModals() {
     }
 
     const openButton = event.target.closest("[data-open-modal]");
+
     if (openButton) {
       openModal(openButton.dataset.openModal);
     }
@@ -477,52 +493,54 @@ function initializeModals() {
 
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
-      document.querySelectorAll(".modal-backdrop.open").forEach(modal => {
+      $$(".modal-backdrop.open").forEach(modal => {
         closeModal(modal.id);
       });
     }
   });
 }
 
-/* ---------- Task modal ---------- */
+/* ---------- Task Form ---------- */
 
 function openTaskModal(task = null, defaults = {}) {
   const form = $("#taskForm");
+
   if (!form) {
-    showToast("Task form HTML mein nahi mila.");
+    showToast("Task form not found.");
     return;
   }
 
-  state.editingTask = task ? task.id : null;
+  state.editingTask = task?.id || null;
   form.reset();
 
-  const setValue = (id, value) => {
-    const element = document.getElementById(id);
-    if (element) element.value = value ?? "";
+  const values = {
+    taskId: task?.id || "",
+    taskTitle: task?.title || "",
+    taskSubject: task?.subject || state.subjects[0] || "College",
+    taskPriority: task?.priority || "medium",
+    taskDate: task?.date || defaults.date || dateKey(new Date()),
+    taskTime: task?.time || defaults.time || "09:00",
+    taskDuration: task?.duration || 30,
+    taskRepeat: task?.repeat || "none",
+    taskNotes: task?.notes || ""
   };
 
-  setValue("taskId", task?.id || "");
-  setValue("taskTitle", task?.title || "");
-  setValue(
-    "taskSubject",
-    task?.subject || state.subjects[0] || "College"
-  );
-  setValue("taskPriority", task?.priority || "medium");
-  setValue("taskDate", task?.date || defaults.date || dateKey(new Date()));
-  setValue("taskTime", task?.time || defaults.time || "09:00");
-  setValue("taskDuration", task?.duration || 30);
-  setValue("taskRepeat", task?.repeat || "none");
-  setValue("taskNotes", task?.notes || "");
+  Object.entries(values).forEach(([id, value]) => {
+    const element = document.getElementById(id);
 
-  const inbox = $("#taskInbox");
-  if (inbox) inbox.checked = task ? Boolean(task.inbox) : false;
+    if (element) element.value = value;
+  });
 
-  const title = $("#modalTitle");
-  if (title) title.textContent = task ? "Edit task" : "Add a task";
+  if ($("#taskInbox")) {
+    $("#taskInbox").checked = task ? Boolean(task.inbox) : false;
+  }
 
-  const saveButton = $("#saveTaskBtn");
-  if (saveButton) {
-    saveButton.textContent = task ? "Save changes" : "Add task";
+  if ($("#modalTitle")) {
+    $("#modalTitle").textContent = task ? "Edit task" : "Add a task";
+  }
+
+  if ($("#saveTaskBtn")) {
+    $("#saveTaskBtn").textContent = task ? "Save changes" : "Add task";
   }
 
   openModal("taskModal");
@@ -532,142 +550,138 @@ function openTaskModal(task = null, defaults = {}) {
 function initializeTaskForm() {
   $("#quickAddBtn")?.addEventListener("click", () => openTaskModal());
   $("#addTaskBtn")?.addEventListener("click", () => openTaskModal());
-  $("#emptyAddTask")?.addEventListener("click", () => openTaskModal());
 
   $("#taskForm")?.addEventListener("submit", event => {
     event.preventDefault();
 
     const title = $("#taskTitle")?.value.trim();
+
     if (!title) {
-      showToast("Task ka title likho.");
-      $("#taskTitle")?.focus();
+      showToast("Enter a task title.");
       return;
     }
 
-    const taskData = normalizeTask({
+    const data = normalizeTask({
       id: $("#taskId")?.value || makeId(),
       title,
-      subject: $("#taskSubject")?.value || state.subjects[0] || "College",
+      subject: $("#taskSubject")?.value || "College",
       priority: $("#taskPriority")?.value || "medium",
       date: $("#taskDate")?.value || dateKey(new Date()),
       time: $("#taskTime")?.value || "09:00",
-      duration: Number($("#taskDuration")?.value) || 30,
+      duration: $("#taskDuration")?.value || 30,
       repeat: $("#taskRepeat")?.value || "none",
       notes: $("#taskNotes")?.value.trim() || "",
       inbox: Boolean($("#taskInbox")?.checked)
     });
 
     if (state.editingTask) {
-      const index = state.tasks.findIndex(
-        task => task.id === state.editingTask
+      const index = state.tasks.findIndex(task =>
+        task.id === state.editingTask
       );
 
       if (index !== -1) {
-        taskData.status = state.tasks[index].status;
-        taskData.completed = state.tasks[index].completed;
-        taskData.completedAt = state.tasks[index].completedAt;
-        state.tasks[index] = taskData;
+        data.status = state.tasks[index].status;
+        data.completed = state.tasks[index].completed;
+        data.completedAt = state.tasks[index].completedAt;
+
+        state.tasks[index] = data;
       }
     } else {
-      state.tasks.push(taskData);
+      state.tasks.push(data);
     }
 
     saveTasks();
+
     closeModal("taskModal");
     renderApp();
-    showToast(state.editingTask ? "Task update ho gaya." : "Task add ho gaya.");
+
+    showToast("Task saved.");
     state.editingTask = null;
   });
 }
 
-/* ---------- Task actions ---------- */
+/* ---------- Task Actions ---------- */
 
 function completeTask(id) {
   const task = state.tasks.find(item => item.id === id);
+
   if (!task) return;
 
-  const wasCompleted = isCompleted(task);
-  task.status = wasCompleted ? "pending" : "completed";
-  task.completed = !wasCompleted;
-  task.completedAt = wasCompleted ? null : new Date().toISOString();
+  const completed = isCompleted(task);
+
+  task.status = completed ? "pending" : "completed";
+  task.completed = !completed;
+  task.completedAt = completed ? null : new Date().toISOString();
 
   saveTasks();
   renderApp();
-  showToast(wasCompleted ? "Task pending kar diya." : "Task complete ho gaya.");
+
+  showToast(completed ? "Task reopened." : "Task completed!");
 }
 
 function deleteTask(id) {
   const task = state.tasks.find(item => item.id === id);
-  if (!task) return;
 
-  if (!confirm(`"${task.title}" delete karna hai?`)) return;
+  if (!task || !confirm(`Delete "${task.title}"?`)) return;
 
   state.tasks = state.tasks.filter(item => item.id !== id);
-  saveTasks();
-  renderApp();
-  showToast("Task delete ho gaya.");
-}
-
-function moveTask(id, date, time) {
-  const task = state.tasks.find(item => item.id === id);
-  if (!task) return;
-
-  task.date = date;
-  if (time) task.time = time;
 
   saveTasks();
   renderApp();
+
+  showToast("Task deleted.");
 }
 
 function initializeTaskActions() {
   document.addEventListener("click", event => {
-    const actionButton = event.target.closest("[data-task-action]");
-    if (!actionButton) return;
+    const button = event.target.closest("[data-task-action]");
 
-    const item = actionButton.closest("[data-task-id]");
-    const id = actionButton.dataset.taskId || item?.dataset.taskId;
+    if (!button) return;
+
+    const id = button.dataset.taskId;
+
     if (!id) return;
 
-    switch (actionButton.dataset.taskAction) {
+    const task = state.tasks.find(item => item.id === id);
+
+    switch (button.dataset.taskAction) {
       case "complete":
         completeTask(id);
         break;
-
-      case "edit": {
-        const task = state.tasks.find(task => task.id === id);
-        if (task) openTaskModal(task);
-        break;
-      }
 
       case "delete":
         deleteTask(id);
         break;
 
-      case "focus": {
-        const task = state.tasks.find(task => task.id === id);
+      case "edit":
+        if (task) openTaskModal(task);
+        break;
+
+      case "focus":
         if (task) {
           state.selectedFocusTask = task.id;
           openFocusModal();
         }
         break;
-      }
     }
   });
 }
 
-/* ---------- Task list ---------- */
+/* ---------- Task List ---------- */
 
 function getVisibleTasks() {
   let tasks = [...state.tasks];
 
-  if (state.page === "inbox") {
-    tasks = tasks.filter(task => task.inbox);
-  } else if (state.page === "today") {
-    tasks = tasks.filter(task => sameDay(task.date, new Date()));
+  if (state.page === "today") {
+    tasks = tasks.filter(task =>
+      sameDay(task.date, new Date()) && !task.inbox
+    );
   } else if (state.page === "upcoming") {
     tasks = tasks.filter(task =>
       getTaskDateTime(task) >= startOfDay(new Date())
     );
+  } else if (state.page === "inbox") {
+    tasks = tasks.filter(task => task.inbox);
   } else if (state.page === "completed") {
     tasks = tasks.filter(isCompleted);
   }
@@ -697,13 +711,14 @@ function getVisibleTasks() {
   }
 
   tasks.sort((a, b) => {
-    if (state.sort === "priority") {
-      const weights = { high: 3, medium: 2, low: 1 };
-      return weights[b.priority] - weights[a.priority];
-    }
-
     if (state.sort === "title") {
       return a.title.localeCompare(b.title);
+    }
+
+    if (state.sort === "priority") {
+      const priority = { high: 3, medium: 2, low: 1 };
+
+      return priority[b.priority] - priority[a.priority];
     }
 
     return getTaskDateTime(a) - getTaskDateTime(b);
@@ -714,6 +729,7 @@ function getVisibleTasks() {
 
 function renderTaskList() {
   const container = $("#taskList");
+
   if (!container) return;
 
   const tasks = getVisibleTasks();
@@ -729,32 +745,36 @@ function renderTaskList() {
         </button>
       </div>
     `;
+
+    $("#emptyAddTask")?.addEventListener("click", () => openTaskModal());
+
     return;
   }
 
   container.innerHTML = tasks.map(task => `
     <article class="task-card ${isCompleted(task) ? "is-complete" : ""}"
-      data-task-id="${escapeHTML(task.id)}"
-      draggable="true">
+      data-task-id="${escapeHTML(task.id)}">
 
       <button type="button"
         class="task-check ${isCompleted(task) ? "checked" : ""}"
         data-task-action="complete"
         data-task-id="${escapeHTML(task.id)}"
-        aria-label="Mark task complete">
+        aria-label="Complete task">
         ${isCompleted(task) ? "✓" : ""}
       </button>
 
       <div class="task-main">
         <h3 class="task-title">${escapeHTML(task.title)}</h3>
+
         <div class="task-meta">
           <span>${escapeHTML(task.subject)}</span>
           <span>${escapeHTML(task.time)}</span>
-          <span>${getTaskDuration(task)} min</span>
+          <span>${task.duration} min</span>
           <span class="priority-${escapeHTML(task.priority)}">
             ${escapeHTML(task.priority)}
           </span>
         </div>
+
         ${task.notes
           ? `<p class="task-notes">${escapeHTML(task.notes)}</p>`
           : ""}
@@ -762,47 +782,39 @@ function renderTaskList() {
 
       <div class="task-actions">
         <button type="button" data-task-action="focus"
-          data-task-id="${escapeHTML(task.id)}" title="Focus">
-          Focus
-        </button>
+          data-task-id="${escapeHTML(task.id)}">Focus</button>
+
         <button type="button" data-task-action="edit"
-          data-task-id="${escapeHTML(task.id)}" title="Edit">
-          Edit
-        </button>
+          data-task-id="${escapeHTML(task.id)}">Edit</button>
+
         <button type="button" data-task-action="delete"
-          data-task-id="${escapeHTML(task.id)}" title="Delete">
-          Delete
-        </button>
+          data-task-id="${escapeHTML(task.id)}">Delete</button>
       </div>
     </article>
   `).join("");
+}
+
+// Compatibility with any older calls in the app.
+function renderTasks() {
+  renderTaskList();
 }
 
 /* ---------- Calendar ---------- */
 
 function startOfWeek(date) {
   const result = startOfDay(date);
-  const day = result.getDay();
-  result.setDate(result.getDate() - ((day + 6) % 7));
-  return result;
-}
+  result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
 
-function endOfWeek(date) {
-  const result = startOfWeek(date);
-  result.setDate(result.getDate() + 6);
   return result;
-}
-
-function monthLabel(date) {
-  return formatDate(date, { month: "long", year: "numeric" });
 }
 
 function renderCalendarHeader() {
   const label = $("#calendarDateLabel");
+
   if (!label) return;
 
   if (state.calendar === "day") {
-    label.textContent = formatDate(state.date, {
+    label.textContent = state.date.toLocaleDateString("en-IN", {
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -810,13 +822,22 @@ function renderCalendarHeader() {
     });
   } else if (state.calendar === "week") {
     const first = startOfWeek(state.date);
-    const last = endOfWeek(state.date);
+    const last = dateOffset(first, 6);
 
     label.textContent =
-      `${formatDate(first, { day: "numeric", month: "short" })} – ` +
-      `${formatDate(last, { day: "numeric", month: "short", year: "numeric" })}`;
+      `${first.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short"
+      })} – ${last.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      })}`;
   } else {
-    label.textContent = monthLabel(state.date);
+    label.textContent = state.date.toLocaleDateString("en-IN", {
+      month: "long",
+      year: "numeric"
+    });
   }
 }
 
@@ -825,134 +846,133 @@ function calendarTaskMarkup(task) {
     <button type="button"
       class="calendar-task priority-${escapeHTML(task.priority)}"
       data-task-action="edit"
-      data-task-id="${escapeHTML(task.id)}"
-      title="${escapeHTML(task.title)}">
-      <span>${escapeHTML(task.time)}</span>
-      ${escapeHTML(task.title)}
+      data-task-id="${escapeHTML(task.id)}">
+      ${escapeHTML(task.time)} ${escapeHTML(task.title)}
     </button>
-  `;
-}
-
-function renderDayCalendar() {
-  const date = state.date;
-  const key = dateKey(date);
-  const tasks = state.tasks
-    .filter(task => task.date === key && !task.inbox)
-    .sort((a, b) => getTaskTime(a).localeCompare(getTaskTime(b)));
-
-  const hours = Array.from({ length: 15 }, (_, index) => index + 6);
-
-  return `
-    <div class="day-calendar">
-      <div class="calendar-day-heading">
-        ${formatDate(date, { weekday: "long", day: "numeric", month: "long" })}
-      </div>
-      ${hours.map(hour => {
-        const time = `${pad(hour)}:00`;
-        const matching = tasks.filter(task =>
-          Number(getTaskTime(task).split(":")[0]) === hour
-        );
-
-        return `
-          <div class="calendar-hour" data-date="${key}" data-time="${time}">
-            <div class="calendar-hour-label">${time}</div>
-            <div class="calendar-hour-content">
-              ${matching.map(calendarTaskMarkup).join("")}
-              <button type="button" class="calendar-add"
-                data-calendar-add="${key}" data-time="${time}"
-                aria-label="Add task at ${time}">+</button>
-            </div>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function renderWeekCalendar() {
-  const first = startOfWeek(state.date);
-  const days = Array.from({ length: 7 }, (_, index) => dateOffset(first, index));
-
-  return `
-    <div class="week-calendar">
-      ${days.map(date => {
-        const key = dateKey(date);
-        const tasks = state.tasks
-          .filter(task => task.date === key && !task.inbox)
-          .sort((a, b) => getTaskTime(a).localeCompare(getTaskTime(b)));
-
-        return `
-          <section class="week-day ${isToday(date) ? "is-today" : ""}"
-            data-date="${key}">
-            <header>
-              <span>${formatDate(date, { weekday: "short" })}</span>
-              <strong>${date.getDate()}</strong>
-            </header>
-            <button type="button" class="week-add-slot"
-              data-calendar-add="${key}" data-time="09:00">+ Add</button>
-            <div class="week-day-tasks">
-              ${tasks.map(calendarTaskMarkup).join("")}
-            </div>
-          </section>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function renderMonthCalendar() {
-  const first = new Date(state.date.getFullYear(), state.date.getMonth(), 1);
-  const gridStart = startOfWeek(first);
-  const days = Array.from({ length: 42 }, (_, index) =>
-    dateOffset(gridStart, index)
-  );
-
-  return `
-    <div class="month-calendar">
-      <div class="month-weekdays">
-        ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-          .map(day => `<span>${day}</span>`).join("")}
-      </div>
-      <div class="month-grid">
-        ${days.map(date => {
-          const key = dateKey(date);
-          const tasks = state.tasks.filter(task =>
-            task.date === key && !task.inbox
-          );
-
-          return `
-            <div class="month-day
-              ${date.getMonth() !== state.date.getMonth() ? "outside-month" : ""}
-              ${isToday(date) ? "is-today" : ""}"
-              data-date="${key}">
-              <button type="button" class="month-day-number"
-                data-select-date="${key}">${date.getDate()}</button>
-              ${tasks.slice(0, 3).map(calendarTaskMarkup).join("")}
-              ${tasks.length > 3
-                ? `<span class="more-tasks">+${tasks.length - 3} more</span>`
-                : ""}
-              <button type="button" class="month-add"
-                data-calendar-add="${key}" data-time="09:00">+</button>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    </div>
   `;
 }
 
 function renderCalendar() {
   const container = $("#calendarView");
+
   if (!container) return;
 
   renderCalendarHeader();
 
   if (state.calendar === "day") {
-    container.innerHTML = renderDayCalendar();
+    const key = dateKey(state.date);
+
+    const tasks = state.tasks.filter(task =>
+      task.date === key && !task.inbox
+    );
+
+    container.innerHTML = `
+      <div class="day-calendar">
+        ${Array.from({ length: 15 }, (_, index) => index + 6)
+          .map(hour => {
+            const time = `${pad(hour)}:00`;
+
+            const matching = tasks.filter(task =>
+              Number(task.time.split(":")[0]) === hour
+            );
+
+            return `
+              <div class="calendar-hour"
+                data-date="${key}" data-time="${time}">
+                <div class="calendar-hour-label">${time}</div>
+
+                <div class="calendar-hour-content">
+                  ${matching.map(calendarTaskMarkup).join("")}
+
+                  <button type="button" class="calendar-add"
+                    data-calendar-add="${key}"
+                    data-time="${time}">+</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
+      </div>
+    `;
   } else if (state.calendar === "week") {
-    container.innerHTML = renderWeekCalendar();
+    const first = startOfWeek(state.date);
+
+    container.innerHTML = `
+      <div class="week-calendar">
+        ${Array.from({ length: 7 }, (_, index) => dateOffset(first, index))
+          .map(date => {
+            const key = dateKey(date);
+
+            const tasks = state.tasks.filter(task =>
+              task.date === key && !task.inbox
+            );
+
+            return `
+              <section class="week-day" data-date="${key}">
+                <header>
+                  <span>${date.toLocaleDateString("en-IN", {
+                    weekday: "short"
+                  })}</span>
+                  <strong>${date.getDate()}</strong>
+                </header>
+
+                <button type="button" class="week-add-slot"
+                  data-calendar-add="${key}" data-time="09:00">
+                  + Add
+                </button>
+
+                ${tasks.map(calendarTaskMarkup).join("")}
+              </section>
+            `;
+          }).join("")}
+      </div>
+    `;
   } else {
-    container.innerHTML = renderMonthCalendar();
+    const first = new Date(
+      state.date.getFullYear(),
+      state.date.getMonth(),
+      1
+    );
+
+    const gridStart = startOfWeek(first);
+
+    container.innerHTML = `
+      <div class="month-calendar">
+        <div class="month-weekdays">
+          ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            .map(day => `<span>${day}</span>`).join("")}
+        </div>
+
+        <div class="month-grid">
+          ${Array.from({ length: 42 }, (_, index) =>
+            dateOffset(gridStart, index)
+          ).map(date => {
+            const key = dateKey(date);
+
+            const tasks = state.tasks.filter(task =>
+              task.date === key && !task.inbox
+            );
+
+            return `
+              <div class="month-day ${
+                date.getMonth() !== state.date.getMonth()
+                  ? "outside-month"
+                  : ""
+              }" data-date="${key}">
+                <button type="button" class="month-day-number"
+                  data-select-date="${key}">
+                  ${date.getDate()}
+                </button>
+
+                ${tasks.slice(0, 3).map(calendarTaskMarkup).join("")}
+
+                <button type="button" class="month-add"
+                  data-calendar-add="${key}" data-time="09:00">+</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
   }
 }
 
@@ -963,7 +983,6 @@ function initializeCalendar() {
 
       $$("[data-calendar]").forEach(item => {
         item.classList.toggle("active", item === button);
-        item.setAttribute("aria-pressed", String(item === button));
       });
 
       renderCalendar();
@@ -1009,15 +1028,18 @@ function initializeCalendar() {
 
   $("#calendarView")?.addEventListener("click", event => {
     const addButton = event.target.closest("[data-calendar-add]");
+
     if (addButton) {
       openTaskModal(null, {
         date: addButton.dataset.calendarAdd,
         time: addButton.dataset.time
       });
+
       return;
     }
 
     const dateButton = event.target.closest("[data-select-date]");
+
     if (dateButton) {
       state.date = parseDate(dateButton.dataset.selectDate);
       state.calendar = "day";
@@ -1032,32 +1054,9 @@ function initializeCalendar() {
       renderCalendar();
     }
   });
-
-  $("#calendarView")?.addEventListener("dragstart", event => {
-    const taskCard = event.target.closest("[data-task-id]");
-    if (!taskCard) return;
-
-    state.draggedTaskId = taskCard.dataset.taskId;
-    event.dataTransfer?.setData("text/plain", state.draggedTaskId);
-  });
-
-  $("#calendarView")?.addEventListener("dragover", event => {
-    if (event.target.closest("[data-date]")) {
-      event.preventDefault();
-    }
-  });
-
-  $("#calendarView")?.addEventListener("drop", event => {
-    const target = event.target.closest("[data-date]");
-    if (!target || !state.draggedTaskId) return;
-
-    event.preventDefault();
-    moveTask(state.draggedTaskId, target.dataset.date);
-    state.draggedTaskId = null;
-  });
 }
 
-/* ---------- Search and filters ---------- */
+/* ---------- Search / Filters ---------- */
 
 function initializeFilters() {
   $("#searchInput")?.addEventListener("input", event => {
@@ -1081,67 +1080,46 @@ function initializeFilters() {
     renderApp();
   });
 }
-/* =========================================
-   Part 3: Navigation, Pomodoro, Analytics
-   and App Initialization
-========================================= */
-
-/* ---------- Date helper ---------- */
-
-function dateOffset(date, days) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return startOfDay(result);
-}
 
 /* ---------- Navigation ---------- */
 
 function initializeNavigation() {
-  const navItems = $$(".nav-item[data-view]");
-
-  navItems.forEach(button => {
+  $$(".nav-item[data-view]").forEach(button => {
     button.addEventListener("click", () => {
-      const view = button.dataset.view;
-
-      state.page = view;
+      state.page = button.dataset.view;
       state.selectedSubject = null;
 
-      navItems.forEach(item => {
+      $$(".nav-item[data-view]").forEach(item => {
         item.classList.toggle("active", item === button);
-        item.setAttribute("aria-current", item === button ? "page" : "false");
       });
 
-      const pageTitles = {
+      const titles = {
         today: ["Today", "Your day, organized."],
         upcoming: ["Upcoming", "Plan what comes next."],
         inbox: ["Inbox", "Tasks waiting to be scheduled."],
         completed: ["Completed", "Look at what you've accomplished."],
-        analytics: ["Insights", "See your progress over time."],
+        analytics: ["Study insights", "See your progress over time."],
         about: ["About FocusFlow", "Your personal study planner."]
       };
 
-      const [title, subtitle] = pageTitles[view] ||
-        [view.charAt(0).toUpperCase() + view.slice(1), ""];
+      const [title, subtitle] = titles[state.page] || ["FocusFlow", ""];
 
-      const pageTitle = $("#pageTitle");
-      const pageSubtitle = $("#pageSubtitle");
-      const breadcrumb = $("#breadcrumbCurrent");
+      if ($("#pageTitle")) $("#pageTitle").textContent = title;
+      if ($("#pageSubtitle")) $("#pageSubtitle").textContent = subtitle;
+      if ($("#breadcrumbCurrent")) {
+        $("#breadcrumbCurrent").textContent = title;
+      }
 
-      if (pageTitle) pageTitle.textContent = title;
-      if (pageSubtitle) pageSubtitle.textContent = subtitle;
-      if (breadcrumb) breadcrumb.textContent = title;
+      const pages = $$(".app-view, [data-page]");
 
-      $$(".app-view, [data-page]").forEach(section => {
-        const sectionView =
-          section.dataset.page ||
+      pages.forEach(section => {
+        const name = section.dataset.page ||
           section.id.replace(/Page$/, "").replace(/^view-/, "");
 
-        const active = sectionView === view;
-        section.hidden = !active;
-        section.classList.toggle("active", active);
+        section.hidden = name !== state.page;
+        section.classList.toggle("active", name === state.page);
       });
 
-      if (view === "analytics") renderAnalytics();
       renderApp();
 
       $("#sidebar")?.classList.remove("open");
@@ -1160,61 +1138,7 @@ function initializeNavigation() {
   });
 }
 
-/* ---------- Dashboard metrics ---------- */
-
-function getTodayTasks() {
-  return state.tasks.filter(task =>
-    sameDay(task.date, new Date()) && !task.inbox
-  );
-}
-
-function renderDashboardMetrics() {
-  const todayTasks = getTodayTasks();
-  const completed = todayTasks.filter(isCompleted);
-  const plannedMinutes = todayTasks
-    .filter(task => !isCompleted(task))
-    .reduce((sum, task) => sum + getTaskDuration(task), 0);
-
-  const metrics = {
-    todayCount: todayTasks.filter(task => !isCompleted(task)).length,
-    plannedToday: plannedMinutes,
-    plannedTasks: todayTasks.length,
-    completedToday: completed.length,
-    completionRate: todayTasks.length
-      ? Math.round(completed.length / todayTasks.length * 100)
-      : 0,
-    focusToday: state.stats.dailyFocus[dateKey(new Date())] || 0,
-    inboxCount: state.tasks.filter(task =>
-      task.inbox && !isCompleted(task)
-    ).length
-  };
-
-  Object.entries(metrics).forEach(([id, value]) => {
-    const element = document.getElementById(id);
-    if (!element) return;
-
-    if (id === "plannedToday") {
-      element.textContent = `${value} min`;
-    } else if (id === "focusToday") {
-      element.textContent = `${value} min`;
-    } else if (id === "completionRate") {
-      element.textContent = `${value}%`;
-    } else {
-      element.textContent = value;
-    }
-  });
-
-  const streak = $("#streakCount");
-  if (streak) streak.textContent = state.stats.streak || 0;
-
-  const focusMinutes = $("#focusMinutes");
-  if (focusMinutes) {
-    focusMinutes.textContent =
-      state.stats.totalFocusMinutes || 0;
-  }
-
-  updateSidebarCounts();
-}
+/* ---------- Dashboard ---------- */
 
 function updateSidebarCounts() {
   const todayCount = $("#todayCount");
@@ -1235,7 +1159,60 @@ function updateSidebarCounts() {
   }
 }
 
-/* ---------- Focus / Pomodoro timer ---------- */
+function renderDashboardMetrics() {
+  const today = getTodayTasks();
+  const completed = today.filter(isCompleted);
+
+  const metrics = {
+    plannedTasks: today.length,
+    completedToday: completed.length,
+    completionRate: today.length
+      ? Math.round(completed.length / today.length * 100)
+      : 0,
+    plannedToday: today.filter(task => !isCompleted(task))
+      .reduce((sum, task) => sum + task.duration, 0),
+    focusToday: state.stats.dailyFocus[dateKey(new Date())] || 0,
+    streakCount: state.stats.streak || 0
+  };
+
+  Object.entries(metrics).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+
+    if (!element) return;
+
+    if (id === "completionRate") {
+      element.textContent = `${value}%`;
+    } else if (id === "plannedToday" || id === "focusToday") {
+      element.textContent = `${value} min`;
+    } else {
+      element.textContent = value;
+    }
+  });
+
+  updateSidebarCounts();
+}
+
+function renderTaskPreviews() {
+  const subjectOverview = $("#subjectOverview");
+
+  if (subjectOverview) {
+    subjectOverview.innerHTML = state.subjects.map(subject => {
+      const count = state.tasks.filter(task =>
+        task.subject === subject &&
+        sameDay(task.date, new Date())
+      ).length;
+
+      return `
+        <div class="subject-overview-row">
+          <span>${escapeHTML(subject)}</span>
+          <strong>${count}</strong>
+        </div>
+      `;
+    }).join("");
+  }
+}
+
+/* ---------- Pomodoro ---------- */
 
 const TIMER_MODES = {
   focus: 25 * 60,
@@ -1244,82 +1221,55 @@ const TIMER_MODES = {
 };
 
 function formatTime(seconds) {
-  const safe = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(safe / 60);
-  const remainingSeconds = safe % 60;
-
-  return `${pad(minutes)}:${pad(remainingSeconds)}`;
+  return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
 }
 
 function updateTimerDisplay() {
-  const time = $("#timerTime");
-  const face = $("#timerFace");
-  const progress = $("#timerProgress");
-  const caption = $("#timerCaption");
-
-  if (time) time.textContent = formatTime(state.timerRemaining);
-
-  if (face) {
-    face.setAttribute("aria-label", formatTime(state.timerRemaining));
-    face.classList.toggle("is-running", state.timerRunning);
+  if ($("#timerTime")) {
+    $("#timerTime").textContent = formatTime(state.timerRemaining);
   }
 
-  if (progress) {
-    const total = TIMER_MODES[state.timerMode] || TIMER_MODES.focus;
-    const fraction = total
-      ? (total - state.timerRemaining) / total
-      : 0;
-
-    progress.style.setProperty("--progress", `${fraction * 100}%`);
-    progress.style.strokeDashoffset = String(1 - fraction);
-  }
-
-  if (caption) {
-    const captions = {
+  if ($("#timerCaption")) {
+    $("#timerCaption").textContent = {
       focus: "Time to focus",
       short: "Take a short break",
       long: "Recharge with a long break"
-    };
-    caption.textContent = captions[state.timerMode] || captions.focus;
+    }[state.timerMode];
   }
 
-  const startButton = $("#timerStart");
-  if (startButton) {
-    startButton.textContent = state.timerRunning ? "Pause" : "Start";
-    startButton.setAttribute(
-      "aria-label",
-      state.timerRunning ? "Pause timer" : "Start timer"
-    );
+  if ($("#timerStart")) {
+    $("#timerStart").textContent = state.timerRunning ? "Pause" : "Start";
   }
 
-  const sessionCount = $("#sessionCount");
-  if (sessionCount) {
-    sessionCount.textContent = state.stats.completedSessions || 0;
+  if ($("#sessionCount")) {
+    $("#sessionCount").textContent =
+      state.stats.completedSessions || 0;
   }
 }
 
 function stopTimer() {
-  if (state.timerInterval) {
-    clearInterval(state.timerInterval);
-    state.timerInterval = null;
-  }
+  clearInterval(state.timerInterval);
 
+  state.timerInterval = null;
   state.timerRunning = false;
+
   updateTimerDisplay();
 }
 
 function selectTimerMode(mode) {
-  if (!Object.hasOwn(TIMER_MODES, mode)) return;
+  if (!(mode in TIMER_MODES)) return;
 
   stopTimer();
+
   state.timerMode = mode;
   state.timerSeconds = TIMER_MODES[mode];
-  state.timerRemaining = TIMER_MODES[mode];
+  state.timerRemaining = state.timerSeconds;
 
   $$("[data-timer-mode]").forEach(button => {
-    const active = button.dataset.timerMode === mode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", String(active));
+    button.classList.toggle(
+      "active",
+      button.dataset.timerMode === mode
+    );
   });
 
   updateTimerDisplay();
@@ -1331,18 +1281,13 @@ function startTimer() {
     return;
   }
 
-  if (state.timerRemaining <= 0) {
-    state.timerRemaining = state.timerSeconds;
-  }
-
   state.timerRunning = true;
   updateTimerDisplay();
 
   state.timerInterval = setInterval(() => {
-    state.timerRemaining -= 1;
+    state.timerRemaining--;
 
     if (state.timerRemaining <= 0) {
-      state.timerRemaining = 0;
       stopTimer();
       finishTimerSession();
       return;
@@ -1372,15 +1317,20 @@ function finishTimerSession() {
     state.stats.dailyFocus[today] =
       (state.stats.dailyFocus[today] || 0) + minutes;
 
-    updateStudyStreak(today);
-    saveStats();
+    const last = state.stats.lastStudyDate;
+    const yesterday = dateKey(dateOffset(new Date(), -1));
 
-    state.sessionCount += 1;
-    showToast("Focus session complete! Great work.");
+    if (last !== today) {
+      state.stats.streak = last === yesterday
+        ? (state.stats.streak || 0) + 1
+        : 1;
+
+      state.stats.lastStudyDate = today;
+    }
 
     if (state.selectedFocusTask) {
-      const task = state.tasks.find(
-        item => item.id === state.selectedFocusTask
+      const task = state.tasks.find(item =>
+        item.id === state.selectedFocusTask
       );
 
       if (task) {
@@ -1389,51 +1339,28 @@ function finishTimerSession() {
       }
     }
 
+    save(STORAGE.stats, state.stats);
+    showToast("Focus session completed!");
     renderApp();
   } else {
-    showToast("Break complete. Ready for another session?");
-  }
-
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("FocusFlow", {
-      body: state.timerMode === "focus"
-        ? "Focus session complete. Take a break!"
-        : "Break complete. Time to get back to work."
-    });
+    showToast("Break complete!");
   }
 
   state.timerRemaining = state.timerSeconds;
   updateTimerDisplay();
 }
 
-function updateStudyStreak(today) {
-  const last = state.stats.lastStudyDate;
-
-  if (last === today) return;
-
-  const yesterday = dateKey(dateOffset(new Date(), -1));
-
-  if (last === yesterday) {
-    state.stats.streak = (state.stats.streak || 0) + 1;
-  } else {
-    state.stats.streak = 1;
-  }
-
-  state.stats.lastStudyDate = today;
-}
-
 function openFocusModal() {
   openModal("focusModal");
 
-  const task = state.tasks.find(
-    item => item.id === state.selectedFocusTask
+  const task = state.tasks.find(item =>
+    item.id === state.selectedFocusTask
   );
 
-  const selected = $("#focusSelectedTask");
-  if (selected) {
-    selected.textContent = task
+  if ($("#focusSelectedTask")) {
+    $("#focusSelectedTask").textContent = task
       ? `Focusing on: ${task.title}`
-      : "Choose a task and start focusing.";
+      : "Time to focus.";
   }
 
   updateTimerDisplay();
@@ -1459,104 +1386,19 @@ function initializeTimer() {
     openFocusModal();
   });
 
-  $("#timerMessage")?.addEventListener("click", () => {
-    if ("Notification" in window &&
-        Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  });
-
   updateTimerDisplay();
 }
 
 /* ---------- Analytics ---------- */
 
-function getLastSevenDays() {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = dateOffset(new Date(), index - 6);
-    const key = dateKey(date);
-
-    return {
-      date,
-      key,
-      label: formatDate(date, { weekday: "short" }),
-      minutes: state.stats.dailyFocus[key] || 0
-    };
-  });
-}
-
-function renderWeeklyChart(containerId) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const days = getLastSevenDays();
-  const maximum = Math.max(30, ...days.map(day => day.minutes));
-
-  container.innerHTML = `
-    <div class="simple-bar-chart">
-      ${days.map(day => {
-        const height = Math.max(3, day.minutes / maximum * 100);
-
-        return `
-          <div class="chart-bar-wrap" title="${day.minutes} focus minutes">
-            <div class="chart-bar"
-              style="height:${height}%"
-              aria-label="${day.minutes} minutes"></div>
-            <span class="chart-label">${escapeHTML(day.label)}</span>
-            <span class="chart-value">${day.minutes}</span>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function renderSubjectAnalytics() {
-  const container = $("#analyticsSubjects");
-  if (!container) return;
-
-  const totals = {};
-
-  state.tasks.forEach(task => {
-    totals[task.subject] = (totals[task.subject] || 0) +
-      (Number(task.focusMinutes) || 0);
-  });
-
-  const entries = Object.entries(totals)
-    .sort((a, b) => b[1] - a[1]);
-
-  if (!entries.length) {
-    container.innerHTML = "<p>No subject activity yet.</p>";
-    return;
-  }
-
-  const maximum = Math.max(1, ...entries.map(entry => entry[1]));
-
-  container.innerHTML = entries.map(([subject, minutes]) => `
-    <div class="subject-analytics-row">
-      <div class="subject-analytics-heading">
-        <span>${escapeHTML(subject)}</span>
-        <strong>${minutes} min</strong>
-      </div>
-      <div class="subject-progress-track">
-        <div class="subject-progress-fill"
-          style="width:${minutes / maximum * 100}%"></div>
-      </div>
-    </div>
-  `).join("");
-}
-
 function renderAnalytics() {
-  renderWeeklyChart("analyticsChart");
-  renderSubjectAnalytics();
+  const completed = state.tasks.filter(isCompleted).length;
+  const total = state.tasks.length;
+  const minutes = state.stats.totalFocusMinutes || 0;
 
   const metrics = $("#analyticsMetrics");
-  if (metrics) {
-    const completed = state.tasks.filter(isCompleted).length;
-    const total = state.tasks.length;
-    const minutes = state.stats.totalFocusMinutes || 0;
-    const sessions = state.stats.completedSessions || 0;
 
+  if (metrics) {
     metrics.innerHTML = `
       <div class="analytics-metric">
         <span>Total tasks</span>
@@ -1571,59 +1413,43 @@ function renderAnalytics() {
         <strong>${Math.floor(minutes / 60)}h ${minutes % 60}m</strong>
       </div>
       <div class="analytics-metric">
-        <span>Focus sessions</span>
-        <strong>${sessions}</strong>
+        <span>Sessions</span>
+        <strong>${state.stats.completedSessions || 0}</strong>
       </div>
     `;
   }
 
+  const subjects = $("#analyticsSubjects");
+
+  if (subjects) {
+    subjects.innerHTML = state.subjects.map(subject => {
+      const totalMinutes = state.tasks
+        .filter(task => task.subject === subject)
+        .reduce((sum, task) => sum + (task.focusMinutes || 0), 0);
+
+      return `
+        <div class="subject-analytics-row">
+          <span>${escapeHTML(subject)}</span>
+          <strong>${totalMinutes} min</strong>
+        </div>
+      `;
+    }).join("");
+  }
+
   const weekTotal = $("#weekTotal");
+
   if (weekTotal) {
-    const total = getLastSevenDays()
-      .reduce((sum, day) => sum + day.minutes, 0);
+    const totalWeek = Array.from({ length: 7 }, (_, index) => {
+      const date = dateKey(dateOffset(new Date(), index - 6));
 
-    weekTotal.textContent = `${total} min`;
+      return state.stats.dailyFocus[date] || 0;
+    }).reduce((sum, value) => sum + value, 0);
+
+    weekTotal.textContent = `${totalWeek} min`;
   }
 }
 
-/* ---------- Today's task preview ---------- */
-
-function renderTaskPreviews() {
-  const todayTasks = getTodayTasks()
-    .sort((a, b) => getTaskDateTime(a) - getTaskDateTime(b));
-
-  const preview = $("#plannedTasks");
-  if (preview && preview.tagName === "UL") {
-    preview.innerHTML = todayTasks.slice(0, 5).map(task => `
-      <li data-task-id="${escapeHTML(task.id)}">
-        <span>${escapeHTML(task.title)}</span>
-        <span>${escapeHTML(task.time)}</span>
-      </li>
-    `).join("");
-  }
-
-  const subjectOverview = $("#subjectOverview");
-  if (subjectOverview) {
-    const counts = state.subjects.map(subject => ({
-      subject,
-      count: state.tasks.filter(task =>
-        task.subject === subject &&
-        sameDay(task.date, new Date())
-      ).length
-    }));
-
-    subjectOverview.innerHTML = counts.map(item => `
-      <div class="subject-overview-row">
-        <span>${escapeHTML(item.subject)}</span>
-        <strong>${item.count}</strong>
-      </div>
-    `).join("");
-  }
-
-  renderWeeklyChart("weekChart");
-}
-
-/* ---------- Global render ---------- */
+/* ---------- Global Render ---------- */
 
 function renderApp() {
   renderProfile();
@@ -1642,29 +1468,20 @@ function renderApp() {
   }
 }
 
-/* ---------- Initial data cleanup ---------- */
+/* ---------- Initialization ---------- */
 
-function initializeData() {
+function initializeApp() {
   state.tasks = Array.isArray(state.tasks)
     ? state.tasks.map(normalizeTask)
     : [];
 
   state.subjects = Array.isArray(state.subjects)
-    ? state.subjects
-        .map(normalizeSubjectName)
-        .filter(Boolean)
+    ? [...new Set(state.subjects.filter(Boolean))]
     : [...DEFAULT_SUBJECTS];
 
-  state.subjects = [...new Set(state.subjects)];
-
   saveTasks();
-  saveSubjects();
-}
+  save(STORAGE.subjects, state.subjects);
 
-/* ---------- Start application ---------- */
-
-function initializeApp() {
-  initializeData();
   initializeProfile();
   initializeTheme();
   initializeModals();
@@ -1676,23 +1493,25 @@ function initializeApp() {
   initializeNavigation();
   initializeTimer();
 
-  const dateElement = $("#topDate");
-  if (dateElement) {
-    dateElement.textContent = formatDate(new Date(), {
+  if ($("#topDate")) {
+    $("#topDate").textContent = new Date().toLocaleDateString("en-IN", {
       weekday: "long",
       day: "numeric",
       month: "long"
     });
   }
 
-  const year = $("#footerYear");
-  if (year) year.textContent = new Date().getFullYear();
+  if ($("#footerYear")) {
+    $("#footerYear").textContent = new Date().getFullYear();
+  }
 
   renderApp();
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeApp);
+  document.addEventListener("DOMContentLoaded", initializeApp, {
+    once: true
+  });
 } else {
   initializeApp();
 }
