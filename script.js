@@ -1,125 +1,121 @@
+/* =========================================
+   FocusFlow — Smart Student Study Planner
+   Part 1: Setup, storage, profile, subjects
+========================================= */
 
 "use strict";
 
-/* ==========================================
-   FOCUSFLOW 2.0
-   Smart Study Planner
-   Tasks • Calendar • Focus Timer • Analytics
-========================================== */
-
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) =>
+  Array.from(root.querySelectorAll(selector));
 
 const STORAGE = {
-  tasks: "focusFlowTasksV1",
   profile: "focusFlowProfileV2",
-  theme: "focusFlowThemeV2",
+  tasks: "focusFlowTasksV1",
   subjects: "focusFlowSubjectsV2",
+  theme: "focusFlowThemeV2",
   stats: "focusFlowStatsV2"
 };
 
-const DAY_MS = 86400000;
-
-const PRIORITY_ORDER = { High: 1, Medium: 2, Low: 3 };
-
-const SUBJECT_COLORS = [
-  "#7565e8", "#269b75", "#d78a3b",
-  "#4389df", "#d75a86", "#38a8a8"
+const DEFAULT_SUBJECTS = [
+  "College",
+  "DSA",
+  "Development",
+  "Revision"
 ];
 
-const TIMER_MODES = {
-  focus: { seconds: 1500, label: "TIME TO FOCUS" },
-  short: { seconds: 300, label: "SHORT BREAK" },
-  long: { seconds: 900, label: "LONG BREAK" }
+const state = {
+  profile: load(STORAGE.profile, { name: "" }),
+  tasks: load(STORAGE.tasks, []),
+  subjects: load(STORAGE.subjects, DEFAULT_SUBJECTS),
+  stats: load(STORAGE.stats, {
+    totalFocusMinutes: 0,
+    completedSessions: 0,
+    dailyFocus: {},
+    lastStudyDate: "",
+    streak: 0
+  }),
+  date: startOfDay(new Date()),
+  calendar: "day",
+  filter: "all",
+  sort: "date",
+  search: "",
+  editingTask: null,
+  selectedFocusTask: null,
+  timerMode: "focus",
+  timerSeconds: 25 * 60,
+  timerRemaining: 25 * 60,
+  timerRunning: false,
+  timerInterval: null,
+  sessionCount: 0
 };
 
-/* ==========================================
-   STORAGE AND HELPERS
-========================================== */
-
-function readJSON(key, fallback) {
+function load(key, fallback) {
   try {
     const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
+    return value === null ? structuredCloneSafe(fallback) : JSON.parse(value);
   } catch (error) {
-    console.error("Storage read error:", error);
-    return fallback;
+    console.warn("Storage read failed:", key, error);
+    return structuredCloneSafe(fallback);
   }
 }
 
-function writeJSON(key, value) {
+function structuredCloneSafe(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function save(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    return true;
   } catch (error) {
-    console.error("Storage write error:", error);
-    toast("Unable to save. Check browser storage.");
-    return false;
+    console.warn("Storage save failed:", key, error);
+    showToast("Browser storage save nahi ho paya.");
   }
 }
 
-function localDate(date = new Date()) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0")
-  ].join("-");
+function saveTasks() {
+  save(STORAGE.tasks, state.tasks);
+}
+
+function saveSubjects() {
+  save(STORAGE.subjects, state.subjects);
+}
+
+function saveStats() {
+  save(STORAGE.stats, state.stats);
+}
+
+function pad(number) {
+  return String(number).padStart(2, "0");
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function startOfDay(date) {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
 }
 
 function parseDate(value) {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return null;
+  if (!value) return startOfDay(new Date());
+
+  const parts = value.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    return startOfDay(new Date());
   }
 
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-
-  return Number.isNaN(date.getTime()) ? null : date;
+  return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-function addDays(value, amount) {
-  const date = parseDate(value);
-  if (!date) return value;
-
-  date.setDate(date.getDate() + amount);
-  return localDate(date);
+function formatDate(date, options = {}) {
+  return new Intl.DateTimeFormat("en-IN", options).format(date);
 }
 
-function formatDate(value, options = {}) {
-  const date = parseDate(value);
-  if (!date) return "Unscheduled";
-
-  return date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    ...options
-  });
-}
-
-function formatTime(value) {
-  if (!value || !/^\d{2}:\d{2}$/.test(value)) return "";
-
-  const [hour, minute] = value.split(":").map(Number);
-
-  return new Date(2000, 0, 1, hour, minute)
-    .toLocaleTimeString("en-IN", {
-      hour: "numeric",
-      minute: "2-digit"
-    });
-}
-
-function formatMinutes(minutes) {
-  const value = Math.max(0, Number(minutes) || 0);
-  const hours = Math.floor(value / 60);
-  const mins = value % 60;
-
-  if (hours && mins) return `${hours}h ${String(mins).padStart(2, "0")}m`;
-  if (hours) return `${hours}h`;
-  return `${mins}m`;
-}
-
-function escapeHTML(value) {
-  return String(value ?? "").replace(/[&<>"']/g, char => ({
+function escapeHTML(value = "") {
+  return String(value).replace(/[&<>"']/g, char => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
@@ -128,307 +124,311 @@ function escapeHTML(value) {
   })[char]);
 }
 
-function createId() {
-  return crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function makeId() {
+  return window.crypto?.randomUUID?.() ||
+    `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function sameDay(a, b) {
-  return Boolean(a && b && a === b);
+function showToast(message) {
+  const toast = $("#toast");
+  if (!toast) {
+    console.log(message);
+    return;
+  }
+
+  toast.textContent = message;
+  toast.classList.add("show", "visible", "active");
+  toast.setAttribute("role", "status");
+
+  clearTimeout(showToast.timeout);
+  showToast.timeout = setTimeout(() => {
+    toast.classList.remove("show", "visible", "active");
+  }, 2600);
 }
 
-function isOverdue(task) {
-  return !task.completed &&
-    !task.inbox &&
-    task.date &&
-    task.date < localDate();
+function sameDay(first, second) {
+  return dateKey(parseDate(first)) === dateKey(parseDate(second));
+}
+
+function isToday(date) {
+  return dateKey(date) === dateKey(new Date());
 }
 
 function getTaskDate(task) {
-  return task.date || task.deadline || "";
+  return parseDate(task.date);
+}
+
+function getTaskDuration(task) {
+  const value = Number(task.duration);
+  return Number.isFinite(value) && value > 0 ? value : 30;
+}
+
+function getTaskTime(task) {
+  return task.time || "09:00";
+}
+
+function getTaskDateTime(task) {
+  const date = getTaskDate(task);
+  const [hours, minutes] = getTaskTime(task).split(":").map(Number);
+  date.setHours(hours || 0, minutes || 0, 0, 0);
+  return date;
+}
+
+function isCompleted(task) {
+  return task.status === "completed" || task.completed === true;
 }
 
 function normalizeTask(task) {
   return {
-    id: String(task.id || createId()),
-    title: String(task.title || task.task || "Untitled task"),
-    subject: String(task.subject || "General"),
-    date: String(task.date || task.deadline || ""),
-    time: String(task.time || ""),
-    duration: Math.max(1, Number(task.duration) || 60),
-    priority: ["High", "Medium", "Low"].includes(task.priority)
+    id: task.id || makeId(),
+    title: String(task.title || "Untitled task"),
+    subject: task.subject || "College",
+    priority: ["low", "medium", "high"].includes(task.priority)
       ? task.priority
-      : "Medium",
-    notes: String(task.notes || ""),
-    repeat: ["daily", "weekdays", "weekly"].includes(task.repeat)
-      ? task.repeat
-      : "none",
+      : "medium",
+    date: task.date || dateKey(new Date()),
+    time: task.time || "09:00",
+    duration: Number(task.duration) || 30,
+    repeat: task.repeat || "none",
+    notes: task.notes || "",
     inbox: Boolean(task.inbox),
-    completed: Boolean(task.completed),
+    status: isCompleted(task) ? "completed" : "pending",
+    completed: isCompleted(task),
     createdAt: task.createdAt || new Date().toISOString(),
     completedAt: task.completedAt || null
   };
 }
 
-function loadTasks() {
-  const saved = readJSON(STORAGE.tasks, []);
+/* ---------- Profile ---------- */
 
-  if (!Array.isArray(saved)) return [];
+function renderProfile() {
+  const name = state.profile.name || "Student";
+  const firstName = name.trim().split(/\s+/)[0] || "Student";
+  const initials = name.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join("")
+    .toUpperCase();
 
-  return saved
-    .filter(task => task && typeof task === "object")
-    .map(normalizeTask);
+  const welcome = $("#welcomeEyebrow");
+  if (welcome) welcome.textContent = `WELCOME BACK, ${firstName.toUpperCase()}`;
+
+  const title = $("#pageTitle");
+  if (title && !title.dataset.customTitle) {
+    title.textContent = "Your day, organized.";
+  }
+
+  const avatar = $("#profileAvatar");
+  if (avatar) avatar.textContent = initials || "S";
+
+  const sidebarName = $("#sidebarName");
+  if (sidebarName) sidebarName.textContent = name;
+
+  const sidebarAvatar = $("#sidebarAvatar");
+  if (sidebarAvatar) sidebarAvatar.textContent = initials || "S";
+
+  const screen = $("#nameScreen");
+  const shell = $("#appShell");
+
+  if (screen && shell) {
+    const needsName = !state.profile.name.trim();
+    screen.hidden = !needsName;
+    shell.hidden = needsName;
+  }
 }
 
-/* ==========================================
-   APPLICATION STATE
-========================================== */
+function initializeProfile() {
+  const form = $("#nameForm");
+  const input = $("#userName");
 
-let tasks = loadTasks();
+  if (input) input.value = state.profile.name || "";
 
-let profile = readJSON(STORAGE.profile, { name: "" });
-if (!profile || typeof profile !== "object") profile = { name: "" };
+  form?.addEventListener("submit", event => {
+    event.preventDefault();
 
-let savedSubjects = readJSON(STORAGE.subjects, []);
-if (!Array.isArray(savedSubjects)) savedSubjects = [];
+    const name = input?.value.trim();
+    if (!name) {
+      showToast("Apna naam enter karo.");
+      input?.focus();
+      return;
+    }
 
-let stats = readJSON(STORAGE.stats, {
-  completedSessions: 0,
-  focusMinutes: 0,
-  completedDates: []
-});
-
-if (!stats || typeof stats !== "object") {
-  stats = {
-    completedSessions: 0,
-    focusMinutes: 0,
-    completedDates: []
-  };
-}
-
-stats.completedSessions = Number(stats.completedSessions) || 0;
-stats.focusMinutes = Number(stats.focusMinutes) || 0;
-
-if (!Array.isArray(stats.completedDates)) {
-  stats.completedDates = [];
-}
-
-let activeView = "today";
-let calendarMode = "day";
-let calendarDate = localDate();
-let editingId = null;
-let selectedFocusTask = null;
-let toastTimeout = null;
-let timerInterval = null;
-let timerRunning = false;
-let timerMode = "focus";
-let remainingSeconds = TIMER_MODES.focus.seconds;
-let timerEndTime = 0;
-
-/* ==========================================
-   TOAST
-========================================== */
-
-function toast(message) {
-  const element = $("#toast");
-  if (!element) return;
-
-  element.textContent = message;
-  element.classList.add("show");
-
-  clearTimeout(toastTimeout);
-
-  toastTimeout = setTimeout(() => {
-    element.classList.remove("show");
-  }, 2800);
-}
-
-/* ==========================================
-   NAME SELECTION AND PROFILE
-========================================== */
-
-function showNameScreen() {
-  $("#nameScreen").hidden = false;
-  $("#appShell").hidden = true;
-
-  $("#userName").value = profile.name || "";
-
-  setTimeout(() => $("#userName")?.focus(), 100);
-}
-
-function showDashboard() {
-  $("#nameScreen").hidden = true;
-  $("#appShell").hidden = false;
-
-  const name = profile.name || "Student";
-  const firstName = name.trim().split(/\s+/)[0];
-
-  $("#pageTitle").innerHTML =
-    `Welcome, ${escapeHTML(firstName)} <span class="wave">✦</span>`;
-
-  $("#profileAvatar").textContent =
-    firstName.charAt(0).toUpperCase();
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12
-    ? "GOOD MORNING"
-    : hour < 17
-      ? "GOOD AFTERNOON"
-      : "GOOD EVENING";
-
-  $("#welcomeEyebrow").textContent =
-    `${greeting}, ${firstName.toUpperCase()}`;
-
-  $("#topDate").textContent = new Date().toLocaleDateString("en-IN", {
-    weekday: "short",
-    day: "numeric",
-    month: "short"
+    state.profile.name = name;
+    save(STORAGE.profile, state.profile);
+    renderProfile();
+    showToast(`Welcome, ${name.split(/\s+/)[0]}!`);
   });
 
-  renderApp();
+  $("#changeNameBtn")?.addEventListener("click", () => {
+    const name = prompt("Apna naam enter karo:", state.profile.name || "");
+    if (name === null) return;
+
+    if (!name.trim()) {
+      showToast("Naam blank nahi ho sakta.");
+      return;
+    }
+
+    state.profile.name = name.trim();
+    save(STORAGE.profile, state.profile);
+    renderProfile();
+  });
+
+  renderProfile();
 }
 
-$("#nameForm").addEventListener("submit", event => {
-  event.preventDefault();
+/* ---------- Subjects ---------- */
 
-  const name = $("#userName").value.trim();
-
-  if (!name) {
-    toast("Please enter your name.");
-    return;
-  }
-
-  if (name.length > 40) {
-    toast("Name must be under 40 characters.");
-    return;
-  }
-
-  profile.name = name;
-
-  if (!writeJSON(STORAGE.profile, profile)) return;
-
-  showDashboard();
-  toast(`Welcome to FocusFlow, ${name}!`);
-});
-
-$("#changeNameBtn").addEventListener("click", () => {
-  closeSidebar();
-  showNameScreen();
-});
-
-/* ==========================================
-   THEME
-========================================== */
-
-function applyTheme(theme) {
-  const dark = theme === "dark";
-
-  document.body.classList.toggle("dark-mode", dark);
-
-  $("#themeToggle").innerHTML = dark
-    ? "<span>☀</span> Switch to light mode"
-    : "<span>◐</span> Switch to dark mode";
-}
-
-applyTheme(readJSON(STORAGE.theme, "light"));
-
-$("#themeToggle").addEventListener("click", () => {
-  const next = document.body.classList.contains("dark-mode")
-    ? "light"
-    : "dark";
-
-  applyTheme(next);
-  writeJSON(STORAGE.theme, next);
-});
-
-/* ==========================================
-   SUBJECTS
-========================================== */
-
-function getSubjects() {
-  const names = [
-    ...savedSubjects,
-    ...tasks.map(task => task.subject)
-  ];
-
-  return [...new Set(
-    names.map(name => String(name || "").trim()).filter(Boolean)
-  )].sort((a, b) => a.localeCompare(b));
-}
-
-function subjectColor(name) {
-  const index = Math.abs(
-    [...name].reduce((total, char) => total + char.charCodeAt(0), 0)
-  ) % SUBJECT_COLORS.length;
-
-  return SUBJECT_COLORS[index];
+function normalizeSubjectName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ");
 }
 
 function renderSubjects() {
-  const subjects = getSubjects();
+  const nav = $("#subjectNav");
+  if (nav) {
+    nav.innerHTML = state.subjects.map(subject => {
+      const count = state.tasks.filter(task =>
+        task.subject === subject && !isCompleted(task)
+      ).length;
 
-  $("#subjectNav").innerHTML = subjects.length
-    ? subjects.map(name => `
-        <button type="button" class="subject-nav-item"
-          data-subject="${escapeHTML(name)}">
-          <span class="subject-dot"
-            style="background:${subjectColor(name)}"></span>
-          <span>${escapeHTML(name)}</span>
+      return `
+        <button class="subject-nav-item" type="button"
+          data-subject-filter="${escapeHTML(subject)}">
+          <span class="subject-dot"></span>
+          <span>${escapeHTML(subject)}</span>
+          <span class="subject-count">${count}</span>
         </button>
-      `).join("")
-    : '<p class="muted tiny">Add a task to create your subjects.</p>';
-
-  $("#subjectSuggestions").innerHTML = subjects
-    .map(name => `<option value="${escapeHTML(name)}"></option>`)
-    .join("");
+      `;
+    }).join("");
+  }
 
   const select = $("#taskSubject");
-  if (select) select.setAttribute("autocomplete", "off");
+  if (select) {
+    const previous = select.value;
+
+    select.innerHTML = state.subjects.map(subject =>
+      `<option value="${escapeHTML(subject)}">${escapeHTML(subject)}</option>`
+    ).join("");
+
+    if (state.subjects.includes(previous)) select.value = previous;
+  }
+
+  const suggestions = $("#subjectSuggestions");
+  if (suggestions) {
+    suggestions.innerHTML = state.subjects.map(subject =>
+      `<option value="${escapeHTML(subject)}"></option>`
+    ).join("");
+  }
+
+  updateSidebarCounts();
 }
 
-$("#subjectNav").addEventListener("click", event => {
-  const button = event.target.closest("[data-subject]");
-  if (!button) return;
+function initializeSubjects() {
+  $("#addSubjectBtn")?.addEventListener("click", () => {
+    openSubjectModal();
+  });
 
-  $("#searchInput").value = button.dataset.subject;
-  activeView = "subject";
-  renderTasks();
-  updateNavigation();
-  $("#taskSection").scrollIntoView({ behavior: "smooth" });
-});
+  $("#subjectForm")?.addEventListener("submit", event => {
+    event.preventDefault();
 
-$("#addSubjectBtn").addEventListener("click", () => {
-  openModal("subjectModal");
-});
+    const input = $("#newSubjectName");
+    const name = normalizeSubjectName(input?.value);
 
-$("#subjectForm").addEventListener("submit", event => {
-  event.preventDefault();
+    if (!name) {
+      showToast("Subject ka naam likho.");
+      return;
+    }
 
-  const name = $("#newSubjectName").value.trim();
-  if (!name) return;
+    if (state.subjects.some(item =>
+      item.toLowerCase() === name.toLowerCase()
+    )) {
+      showToast("Ye subject pehle se hai.");
+      return;
+    }
 
-  if (getSubjects().some(item => item.toLowerCase() === name.toLowerCase())) {
-    toast("This subject already exists.");
-    return;
-  }
+    state.subjects.push(name);
+    saveSubjects();
+    renderSubjects();
+    closeModal("subjectModal");
 
-  savedSubjects.push(name);
+    if (input) input.value = "";
+    showToast("Subject add ho gaya.");
+  });
 
-  if (!writeJSON(STORAGE.subjects, savedSubjects)) {
-    savedSubjects.pop();
-    return;
-  }
+  $("#subjectNav")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-subject-filter]");
+    if (!button) return;
 
-  $("#newSubjectName").value = "";
-  closeModal("subjectModal");
+    state.search = "";
+    state.filter = "all";
+    state.selectedSubject = button.dataset.subjectFilter;
+
+    const search = $("#searchInput");
+    if (search) search.value = "";
+
+    renderTasks();
+    showToast(`${state.selectedSubject} tasks`);
+  });
+
   renderSubjects();
-  toast("Subject added.");
-});
+}
 
-/* ==========================================
-   MODAL MANAGEMENT
-========================================== */
+function openSubjectModal() {
+  const modal = $("#subjectModal");
+  if (!modal) {
+    const name = prompt("New subject ka naam:");
+    if (!name) return;
+
+    const clean = normalizeSubjectName(name);
+    if (!clean || state.subjects.includes(clean)) {
+      showToast("Subject invalid hai ya pehle se hai.");
+      return;
+    }
+
+    state.subjects.push(clean);
+    saveSubjects();
+    renderSubjects();
+    return;
+  }
+
+  openModal("subjectModal");
+  $("#newSubjectName")?.focus();
+}
+
+/* ---------- Theme ---------- */
+
+function initializeTheme() {
+  const savedTheme = load(STORAGE.theme, "light");
+  applyTheme(savedTheme);
+
+  $("#themeToggle")?.addEventListener("click", () => {
+    const current = document.documentElement.dataset.theme ||
+      (document.body.classList.contains("dark") ? "dark" : "light");
+
+    applyTheme(current === "dark" ? "light" : "dark");
+  });
+}
+
+function applyTheme(theme) {
+  const normalized = theme === "dark" ? "dark" : "light";
+
+  document.documentElement.dataset.theme = normalized;
+  document.documentElement.classList.toggle("dark", normalized === "dark");
+  document.body.classList.toggle("dark", normalized === "dark");
+  save(STORAGE.theme, normalized);
+
+  const button = $("#themeToggle");
+  if (button) {
+    button.setAttribute(
+      "aria-label",
+      normalized === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    button.title = normalized === "dark" ? "Light mode" : "Dark mode";
+  }
+}
+/* =========================================
+   Part 2: Modal handling and task management
+========================================= */
 
 function openModal(id) {
   const modal = document.getElementById(id);
@@ -436,12 +436,7 @@ function openModal(id) {
 
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
-
-  document.body.style.overflow = "hidden";
-
-  setTimeout(() => {
-    modal.querySelector("input:not([type=hidden])")?.focus();
-  }, 100);
+  document.body.classList.add("modal-open");
 }
 
 function closeModal(id) {
@@ -452,1211 +447,1252 @@ function closeModal(id) {
   modal.setAttribute("aria-hidden", "true");
 
   if (!document.querySelector(".modal-backdrop.open")) {
-    document.body.style.overflow = "";
+    document.body.classList.remove("modal-open");
   }
 }
 
-$$("[data-close-modal]").forEach(button => {
-  button.addEventListener("click", () => {
-    const modal = button.closest(".modal-backdrop");
-    if (modal) closeModal(modal.id);
+function initializeModals() {
+  document.addEventListener("click", event => {
+    const closeButton = event.target.closest(
+      "[data-close-modal], .modal-close, .close-modal"
+    );
+
+    if (closeButton) {
+      const modal = closeButton.closest(".modal-backdrop");
+      if (modal?.id) closeModal(modal.id);
+    }
+
+    if (
+      event.target.classList.contains("modal-backdrop") &&
+      event.target.id
+    ) {
+      closeModal(event.target.id);
+    }
+
+    const openButton = event.target.closest("[data-open-modal]");
+    if (openButton) {
+      openModal(openButton.dataset.openModal);
+    }
   });
-});
 
-$$(".modal-backdrop").forEach(modal => {
-  modal.addEventListener("click", event => {
-    if (event.target === modal) closeModal(modal.id);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      document.querySelectorAll(".modal-backdrop.open").forEach(modal => {
+        closeModal(modal.id);
+      });
+    }
   });
-});
-
-document.addEventListener("keydown", event => {
-  if (event.key === "Escape") {
-    $$(".modal-backdrop.open").forEach(modal => closeModal(modal.id));
-    closeSidebar();
-  }
-});
-
-/* ==========================================
-   TASK FORM: CREATE AND EDIT
-========================================== */
-
-function resetTaskForm() {
-  $("#taskForm").reset();
-  $("#taskId").value = "";
-  $("#taskDate").value = calendarDate || localDate();
-  $("#taskTime").value = "09:00";
-  $("#taskPriority").value = "Medium";
-  $("#taskDuration").value = "60";
-  $("#taskRepeat").value = "none";
-  $("#taskInbox").checked = false;
-
-  editingId = null;
-
-  $("#modalTitle").textContent = "Create a task";
-  $("#saveTaskBtn").innerHTML = "Save task <span>→</span>";
 }
 
-function openTaskForm(task = null, date = calendarDate) {
-  resetTaskForm();
+/* ---------- Task modal ---------- */
 
-  if (task) {
-    editingId = task.id;
+function openTaskModal(task = null, defaults = {}) {
+  const form = $("#taskForm");
+  if (!form) {
+    showToast("Task form HTML mein nahi mila.");
+    return;
+  }
 
-    $("#taskId").value = task.id;
-    $("#taskTitle").value = task.title;
-    $("#taskSubject").value = task.subject;
-    $("#taskDate").value = task.date || "";
-    $("#taskTime").value = task.time || "";
-    $("#taskDuration").value = String(task.duration);
-    $("#taskPriority").value = task.priority;
-    $("#taskNotes").value = task.notes || "";
-    $("#taskRepeat").value = task.repeat || "none";
-    $("#taskInbox").checked = Boolean(task.inbox);
+  state.editingTask = task ? task.id : null;
+  form.reset();
 
-    $("#modalTitle").textContent = "Edit task";
-    $("#saveTaskBtn").innerHTML = "Save changes <span>→</span>";
-  } else {
-    $("#taskDate").value = date || localDate();
+  const setValue = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.value = value ?? "";
+  };
+
+  setValue("taskId", task?.id || "");
+  setValue("taskTitle", task?.title || "");
+  setValue(
+    "taskSubject",
+    task?.subject || state.subjects[0] || "College"
+  );
+  setValue("taskPriority", task?.priority || "medium");
+  setValue("taskDate", task?.date || defaults.date || dateKey(new Date()));
+  setValue("taskTime", task?.time || defaults.time || "09:00");
+  setValue("taskDuration", task?.duration || 30);
+  setValue("taskRepeat", task?.repeat || "none");
+  setValue("taskNotes", task?.notes || "");
+
+  const inbox = $("#taskInbox");
+  if (inbox) inbox.checked = task ? Boolean(task.inbox) : false;
+
+  const title = $("#modalTitle");
+  if (title) title.textContent = task ? "Edit task" : "Add a task";
+
+  const saveButton = $("#saveTaskBtn");
+  if (saveButton) {
+    saveButton.textContent = task ? "Save changes" : "Add task";
   }
 
   openModal("taskModal");
+  setTimeout(() => $("#taskTitle")?.focus(), 50);
 }
 
-$("#quickAddBtn").addEventListener("click", () => openTaskForm());
+function initializeTaskForm() {
+  $("#quickAddBtn")?.addEventListener("click", () => openTaskModal());
+  $("#addTaskBtn")?.addEventListener("click", () => openTaskModal());
+  $("#emptyAddTask")?.addEventListener("click", () => openTaskModal());
 
-$("#taskForm").addEventListener("submit", event => {
-  event.preventDefault();
+  $("#taskForm")?.addEventListener("submit", event => {
+    event.preventDefault();
 
-  const title = $("#taskTitle").value.trim();
-  const subject = $("#taskSubject").value.trim();
-  const date = $("#taskDate").value;
-  const time = $("#taskTime").value;
-  const duration = Number($("#taskDuration").value);
-  const priority = $("#taskPriority").value;
-  const notes = $("#taskNotes").value.trim();
-  const repeat = $("#taskRepeat").value;
-  const inbox = $("#taskInbox").checked;
+    const title = $("#taskTitle")?.value.trim();
+    if (!title) {
+      showToast("Task ka title likho.");
+      $("#taskTitle")?.focus();
+      return;
+    }
 
-  if (!title || !subject || !date) {
-    toast("Please complete the required fields.");
-    return;
-  }
+    const taskData = normalizeTask({
+      id: $("#taskId")?.value || makeId(),
+      title,
+      subject: $("#taskSubject")?.value || state.subjects[0] || "College",
+      priority: $("#taskPriority")?.value || "medium",
+      date: $("#taskDate")?.value || dateKey(new Date()),
+      time: $("#taskTime")?.value || "09:00",
+      duration: Number($("#taskDuration")?.value) || 30,
+      repeat: $("#taskRepeat")?.value || "none",
+      notes: $("#taskNotes")?.value.trim() || "",
+      inbox: Boolean($("#taskInbox")?.checked)
+    });
 
-  if (!Number.isFinite(duration) || duration < 1) {
-    toast("Choose a valid duration.");
-    return;
-  }
+    if (state.editingTask) {
+      const index = state.tasks.findIndex(
+        task => task.id === state.editingTask
+      );
 
-  const previous = editingId
-    ? tasks.find(task => task.id === editingId)
-    : null;
+      if (index !== -1) {
+        taskData.status = state.tasks[index].status;
+        taskData.completed = state.tasks[index].completed;
+        taskData.completedAt = state.tasks[index].completedAt;
+        state.tasks[index] = taskData;
+      }
+    } else {
+      state.tasks.push(taskData);
+    }
 
-  const task = normalizeTask({
-    ...(previous || {}),
-    id: editingId || createId(),
-    title,
-    subject,
-    date,
-    time,
-    duration,
-    priority,
-    notes,
-    repeat,
-    inbox,
-    completed: previous?.completed || false,
-    completedAt: previous?.completedAt || null,
-    createdAt: previous?.createdAt || new Date().toISOString()
+    saveTasks();
+    closeModal("taskModal");
+    renderApp();
+    showToast(state.editingTask ? "Task update ho gaya." : "Task add ho gaya.");
+    state.editingTask = null;
   });
+}
 
-  if (previous) {
-    const index = tasks.findIndex(item => item.id === editingId);
-    const old = tasks[index];
+/* ---------- Task actions ---------- */
 
-    tasks[index] = task;
-
-    if (!writeJSON(STORAGE.tasks, tasks)) {
-      tasks[index] = old;
-      return;
-    }
-
-    toast("Task updated successfully.");
-  } else {
-    tasks.unshift(task);
-
-    if (!writeJSON(STORAGE.tasks, tasks)) {
-      tasks.shift();
-      return;
-    }
-
-    toast("New task added.");
-  }
-
-  closeModal("taskModal");
-  resetTaskForm();
-  renderApp();
-});
-
-/* ==========================================
-   TASK COMPLETE, DELETE, REPEAT
-========================================== */
-
-function toggleTask(id) {
-  const task = tasks.find(item => item.id === id);
+function completeTask(id) {
+  const task = state.tasks.find(item => item.id === id);
   if (!task) return;
 
-  const oldCompleted = task.completed;
-  const oldCompletedAt = task.completedAt;
+  const wasCompleted = isCompleted(task);
+  task.status = wasCompleted ? "pending" : "completed";
+  task.completed = !wasCompleted;
+  task.completedAt = wasCompleted ? null : new Date().toISOString();
 
-  task.completed = !task.completed;
-  task.completedAt = task.completed ? new Date().toISOString() : null;
-
-  if (task.completed) {
-    const today = localDate();
-
-    if (!stats.completedDates.includes(today)) {
-      stats.completedDates.push(today);
-    }
-
-    writeJSON(STORAGE.stats, stats);
-  }
-
-  if (!writeJSON(STORAGE.tasks, tasks)) {
-    task.completed = oldCompleted;
-    task.completedAt = oldCompletedAt;
-    return;
-  }
-
-  toast(task.completed ? "Great work! Task completed." : "Task reopened.");
+  saveTasks();
   renderApp();
+  showToast(wasCompleted ? "Task pending kar diya." : "Task complete ho gaya.");
 }
 
 function deleteTask(id) {
-  const index = tasks.findIndex(item => item.id === id);
-  if (index < 0) return;
+  const task = state.tasks.find(item => item.id === id);
+  if (!task) return;
 
-  const removed = tasks.splice(index, 1)[0];
+  if (!confirm(`"${task.title}" delete karna hai?`)) return;
 
-  if (!writeJSON(STORAGE.tasks, tasks)) {
-    tasks.splice(index, 0, removed);
-    return;
-  }
+  state.tasks = state.tasks.filter(item => item.id !== id);
+  saveTasks();
+  renderApp();
+  showToast("Task delete ho gaya.");
+}
 
-  if (editingId === id) resetTaskForm();
+function moveTask(id, date, time) {
+  const task = state.tasks.find(item => item.id === id);
+  if (!task) return;
 
-  toast("Task deleted.");
+  task.date = date;
+  if (time) task.time = time;
+
+  saveTasks();
   renderApp();
 }
 
-function makeNextOccurrence(task) {
-  if (!task.repeat || task.repeat === "none") return;
+function initializeTaskActions() {
+  document.addEventListener("click", event => {
+    const actionButton = event.target.closest("[data-task-action]");
+    if (!actionButton) return;
 
-  let nextDate = task.date;
-  let attempts = 0;
+    const item = actionButton.closest("[data-task-id]");
+    const id = actionButton.dataset.taskId || item?.dataset.taskId;
+    if (!id) return;
 
-  do {
-    nextDate = addDays(nextDate, task.repeat === "weekly" ? 7 : 1);
-    attempts++;
+    switch (actionButton.dataset.taskAction) {
+      case "complete":
+        completeTask(id);
+        break;
 
-    if (task.repeat === "weekdays") {
-      const day = parseDate(nextDate)?.getDay();
-      if (day === 0 || day === 6) continue;
+      case "edit": {
+        const task = state.tasks.find(task => task.id === id);
+        if (task) openTaskModal(task);
+        break;
+      }
+
+      case "delete":
+        deleteTask(id);
+        break;
+
+      case "focus": {
+        const task = state.tasks.find(task => task.id === id);
+        if (task) {
+          state.selectedFocusTask = task.id;
+          openFocusModal();
+        }
+        break;
+      }
     }
-
-    break;
-  } while (attempts < 10);
-
-  const nextTask = normalizeTask({
-    ...task,
-    id: createId(),
-    date: nextDate,
-    completed: false,
-    completedAt: null,
-    createdAt: new Date().toISOString()
   });
-
-  tasks.unshift(nextTask);
-  writeJSON(STORAGE.tasks, tasks);
 }
 
-/* ==========================================
-   TASK FILTERING AND LIST
-========================================== */
+/* ---------- Task list ---------- */
 
 function getVisibleTasks() {
-  const query = $("#searchInput").value.trim().toLowerCase();
-  const status = $("#filterStatus").value;
-  const sortBy = $("#sortTasks").value;
+  let tasks = [...state.tasks];
 
-  let result = tasks.filter(task => {
-    const matchesQuery = [
-      task.title,
-      task.subject,
-      task.notes
-    ].some(value => String(value || "").toLowerCase().includes(query));
+  if (state.page === "inbox") {
+    tasks = tasks.filter(task => task.inbox);
+  } else if (state.page === "today") {
+    tasks = tasks.filter(task => sameDay(task.date, new Date()));
+  } else if (state.page === "upcoming") {
+    tasks = tasks.filter(task =>
+      getTaskDateTime(task) >= startOfDay(new Date())
+    );
+  } else if (state.page === "completed") {
+    tasks = tasks.filter(isCompleted);
+  }
 
-    const matchesStatus =
-      status === "all" ||
-      (status === "pending" && !task.completed) ||
-      (status === "completed" && task.completed) ||
-      (status === "overdue" && isOverdue(task));
+  if (state.selectedSubject) {
+    tasks = tasks.filter(task =>
+      task.subject === state.selectedSubject
+    );
+  }
 
-    let matchesView = true;
+  if (state.filter === "pending") {
+    tasks = tasks.filter(task => !isCompleted(task));
+  } else if (state.filter === "completed") {
+    tasks = tasks.filter(isCompleted);
+  } else if (state.filter === "high") {
+    tasks = tasks.filter(task => task.priority === "high");
+  }
 
-    if (activeView === "today") {
-      matchesView = !task.inbox && task.date === localDate();
-    } else if (activeView === "upcoming") {
-      matchesView = !task.inbox && task.date >= localDate();
-    } else if (activeView === "inbox") {
-      matchesView = task.inbox;
-    } else if (activeView === "subject") {
-      matchesView = task.subject.toLowerCase().includes(query);
+  if (state.search) {
+    const query = state.search.toLowerCase();
+
+    tasks = tasks.filter(task =>
+      task.title.toLowerCase().includes(query) ||
+      task.subject.toLowerCase().includes(query) ||
+      task.notes.toLowerCase().includes(query)
+    );
+  }
+
+  tasks.sort((a, b) => {
+    if (state.sort === "priority") {
+      const weights = { high: 3, medium: 2, low: 1 };
+      return weights[b.priority] - weights[a.priority];
     }
 
-    return matchesQuery && matchesStatus && matchesView;
+    if (state.sort === "title") {
+      return a.title.localeCompare(b.title);
+    }
+
+    return getTaskDateTime(a) - getTaskDateTime(b);
   });
 
-  result.sort((a, b) => {
-    if (sortBy === "priority") {
-      return (PRIORITY_ORDER[a.priority] || 4) -
-        (PRIORITY_ORDER[b.priority] || 4);
-    }
-
-    if (sortBy === "subject") {
-      return a.subject.localeCompare(b.subject);
-    }
-
-    if (sortBy === "time") {
-      return (a.time || "99:99").localeCompare(b.time || "99:99");
-    }
-
-    return getTaskDate(a).localeCompare(getTaskDate(b));
-  });
-
-  return result;
+  return tasks;
 }
 
-function taskCard(task) {
-  const priority = task.priority.toLowerCase();
-  const completed = task.completed;
+function renderTaskList() {
+  const container = $("#taskList");
+  if (!container) return;
 
-  const schedule = task.inbox
-    ? "In inbox"
-    : `${formatDate(task.date)}${task.time ? " · " + formatTime(task.time) : ""}`;
+  const tasks = getVisibleTasks();
 
-  return `
-    <article class="task-card ${completed ? "completed" : ""}"
-      data-task-id="${escapeHTML(task.id)}">
+  if (!tasks.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">✓</div>
+        <h3>Nothing on your list</h3>
+        <p>Add a task to start planning your day.</p>
+        <button type="button" class="btn btn-primary" id="emptyAddTask">
+          Add task
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = tasks.map(task => `
+    <article class="task-card ${isCompleted(task) ? "is-complete" : ""}"
+      data-task-id="${escapeHTML(task.id)}"
+      draggable="true">
 
       <button type="button"
-        class="task-check ${completed ? "checked" : ""}"
-        data-action="toggle"
-        data-id="${escapeHTML(task.id)}"
-        aria-label="${completed ? "Mark pending" : "Mark complete"}">
-        ${completed ? "✓" : ""}
+        class="task-check ${isCompleted(task) ? "checked" : ""}"
+        data-task-action="complete"
+        data-task-id="${escapeHTML(task.id)}"
+        aria-label="Mark task complete">
+        ${isCompleted(task) ? "✓" : ""}
       </button>
 
       <div class="task-main">
-        <h3 class="task-card-title">${escapeHTML(task.title)}</h3>
-
-        <p class="task-card-subject">
-          <span class="subject-dot"
-            style="display:inline-block;vertical-align:middle;background:${subjectColor(task.subject)}"></span>
-          ${escapeHTML(task.subject)}
-        </p>
-
-        ${task.notes
-          ? `<p class="task-card-notes">${escapeHTML(task.notes)}</p>`
-          : ""}
-
+        <h3 class="task-title">${escapeHTML(task.title)}</h3>
         <div class="task-meta">
-          <span>◷ ${escapeHTML(schedule)}</span>
-          <span>◴ ${formatMinutes(task.duration)}</span>
-          ${task.repeat !== "none" ? "<span>↻ Repeats</span>" : ""}
-          ${isOverdue(task) ? "<span>⚠ Overdue</span>" : ""}
+          <span>${escapeHTML(task.subject)}</span>
+          <span>${escapeHTML(task.time)}</span>
+          <span>${getTaskDuration(task)} min</span>
+          <span class="priority-${escapeHTML(task.priority)}">
+            ${escapeHTML(task.priority)}
+          </span>
         </div>
+        ${task.notes
+          ? `<p class="task-notes">${escapeHTML(task.notes)}</p>`
+          : ""}
       </div>
 
-      <div class="task-side">
-        <span class="priority-badge ${priority}">
-          ${escapeHTML(task.priority)}
-        </span>
-
-        <div class="task-actions">
-          <button type="button" data-action="focus" data-id="${escapeHTML(task.id)}" aria-label="Focus on task">Focus</button>
-          <button type="button" data-action="edit" data-id="${escapeHTML(task.id)}" aria-label="Edit task">Edit</button>
-          <button type="button" class="delete-task" data-action="delete" data-id="${escapeHTML(task.id)}" aria-label="Delete task">Delete</button>
-        </div>
+      <div class="task-actions">
+        <button type="button" data-task-action="focus"
+          data-task-id="${escapeHTML(task.id)}" title="Focus">
+          Focus
+        </button>
+        <button type="button" data-task-action="edit"
+          data-task-id="${escapeHTML(task.id)}" title="Edit">
+          Edit
+        </button>
+        <button type="button" data-task-action="delete"
+          data-task-id="${escapeHTML(task.id)}" title="Delete">
+          Delete
+        </button>
       </div>
-
     </article>
-  `;
+  `).join("");
 }
 
-function renderTasks() {
-  const visible = getVisibleTasks();
+/* ---------- Calendar ---------- */
 
-  $("#taskList").innerHTML = visible.length
-    ? visible.map(taskCard).join("")
-    : `
-      <div class="empty-state">
-        <strong>${activeView === "inbox" ? "Your inbox is clear" : "Nothing on the list yet"}</strong>
-        Add a task to start organizing your study time.
-      </div>
-    `;
-
-  const titles = {
-    today: "Today's tasks",
-    upcoming: "Upcoming tasks",
-    inbox: "Task inbox",
-    analytics: "Study tasks",
-    subject: "Subject tasks"
-  };
-
-  $("#taskSectionTitle").textContent = titles[activeView] || "Your tasks";
+function startOfWeek(date) {
+  const result = startOfDay(date);
+  const day = result.getDay();
+  result.setDate(result.getDate() - ((day + 6) % 7));
+  return result;
 }
 
-$("#taskList").addEventListener("click", event => {
-  const button = event.target.closest("[data-action]");
-  if (!button) return;
-
-  const { action, id } = button.dataset;
-  const task = tasks.find(item => item.id === id);
-
-  if (action === "toggle") {
-    const wasCompleted = task?.completed;
-    toggleTask(id);
-
-    if (task && !wasCompleted && task.repeat !== "none") {
-      makeNextOccurrence(task);
-      renderApp();
-    }
-  }
-
-  if (action === "edit" && task) openTaskForm(task);
-
-  if (action === "delete") {
-    if (confirm("Delete this task?")) deleteTask(id);
-  }
-
-  if (action === "focus" && task) {
-    selectedFocusTask = task.id;
-    $("#focusSelectedTask").textContent =
-      `${task.subject} · ${task.title}`;
-    openModal("focusModal");
-  }
-});
-
-$("#searchInput").addEventListener("input", renderTasks);
-$("#filterStatus").addEventListener("change", renderTasks);
-$("#sortTasks").addEventListener("change", renderTasks);
-
-$("#showAllTasks").addEventListener("click", () => {
-  activeView = "upcoming";
-  $("#searchInput").value = "";
-  $("#filterStatus").value = "all";
-  updateNavigation();
-  renderTasks();
-  $("#taskSection").scrollIntoView({ behavior: "smooth" });
-});
-
-/* ==========================================
-   SIDEBAR NAVIGATION
-========================================== */
-
-function updateNavigation() {
-  $$(".nav-item").forEach(button => {
-    button.classList.toggle(
-      "active",
-      button.dataset.view === activeView
-    );
-  });
-
-  const labels = {
-    today: "Today",
-    upcoming: "Upcoming",
-    inbox: "Task inbox",
-    analytics: "Study insights",
-    subject: "Subject tasks"
-  };
-
-  $("#breadcrumbCurrent").textContent = labels[activeView] || "Today";
-
-  const analytics = activeView === "analytics";
-
-  $("#analyticsPage").classList.toggle("hidden", !analytics);
-  $("#plannerSection").classList.toggle("hidden", analytics);
-  $("#insightsPreview").classList.toggle("hidden", analytics);
-  $("#taskSection").classList.toggle("hidden", analytics);
-  $("#focusBanner").classList.toggle("hidden", analytics);
-
-  $("#welcomeSection").classList.toggle("hidden", analytics);
+function endOfWeek(date) {
+  const result = startOfWeek(date);
+  result.setDate(result.getDate() + 6);
+  return result;
 }
 
-$$(".nav-item").forEach(button => {
-  button.addEventListener("click", () => {
-    activeView = button.dataset.view;
-    updateNavigation();
-    closeSidebar();
-
-    if (activeView === "analytics") {
-      renderAnalytics();
-    } else {
-      renderTasks();
-    }
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-});
-
-/* ==========================================
-   MOBILE SIDEBAR
-========================================== */
-
-function closeSidebar() {
-  $("#sidebar").classList.remove("open");
-  $("#mobileScrim").classList.remove("show");
+function monthLabel(date) {
+  return formatDate(date, { month: "long", year: "numeric" });
 }
 
-$("#menuToggle").addEventListener("click", () => {
-  $("#sidebar").classList.toggle("open");
-  $("#mobileScrim").classList.toggle("show");
-});
-
-$("#mobileScrim").addEventListener("click", closeSidebar);
-
-/* ==========================================
-   CALENDAR NAVIGATION
-========================================== */
-
-$$("[data-calendar]").forEach(button => {
-  button.addEventListener("click", () => {
-    calendarMode = button.dataset.calendar;
-
-    $$("[data-calendar]").forEach(item => {
-      item.classList.toggle("active", item === button);
-    });
-
-    renderCalendar();
-  });
-});
-
-$("#prevDate").addEventListener("click", () => {
-  if (calendarMode === "day") {
-    calendarDate = addDays(calendarDate, -1);
-  } else if (calendarMode === "week") {
-    calendarDate = addDays(calendarDate, -7);
-  } else {
-    const date = parseDate(calendarDate);
-    date.setMonth(date.getMonth() - 1);
-    calendarDate = localDate(date);
-  }
-
-  renderCalendar();
-});
-
-$("#nextDate").addEventListener("click", () => {
-  if (calendarMode === "day") {
-    calendarDate = addDays(calendarDate, 1);
-  } else if (calendarMode === "week") {
-    calendarDate = addDays(calendarDate, 7);
-  } else {
-    const date = parseDate(calendarDate);
-    date.setMonth(date.getMonth() + 1);
-    calendarDate = localDate(date);
-  }
-
-  renderCalendar();
-});
-
-$("#goToday").addEventListener("click", () => {
-  calendarDate = localDate();
-  renderCalendar();
-});
-
-$("#calendarDateLabel").addEventListener("click", () => {
-  calendarDate = localDate();
-  renderCalendar();
-});
-
-function getDayTasks(date) {
-  return tasks.filter(task =>
-    !task.inbox && task.date === date
-  ).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
-}
-
-function renderCalendar() {
-  const date = parseDate(calendarDate) || new Date();
+function renderCalendarHeader() {
   const label = $("#calendarDateLabel");
+  if (!label) return;
 
-  if (calendarMode === "day") {
-    label.textContent = sameDay(calendarDate, localDate())
-      ? "Today"
-      : formatDate(calendarDate, {
-          weekday: "short",
-          year: "numeric"
-        });
-
-    $("#plannerHeading").textContent = "Daily timeline";
-    renderDayCalendar(calendarDate);
-  }
-
-  if (calendarMode === "week") {
-    const start = new Date(date);
-    start.setDate(date.getDate() - date.getDay());
-
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-
-    label.textContent =
-      `${formatDate(localDate(start))} – ${formatDate(localDate(end))}`;
-
-    $("#plannerHeading").textContent = "Your week";
-    renderWeekCalendar(start);
-  }
-
-  if (calendarMode === "month") {
-    label.textContent = date.toLocaleDateString("en-IN", {
+  if (state.calendar === "day") {
+    label.textContent = formatDate(state.date, {
+      weekday: "long",
+      day: "numeric",
       month: "long",
       year: "numeric"
     });
+  } else if (state.calendar === "week") {
+    const first = startOfWeek(state.date);
+    const last = endOfWeek(state.date);
 
-    $("#plannerHeading").textContent = "Monthly overview";
-    renderMonthCalendar(date);
+    label.textContent =
+      `${formatDate(first, { day: "numeric", month: "short" })} – ` +
+      `${formatDate(last, { day: "numeric", month: "short", year: "numeric" })}`;
+  } else {
+    label.textContent = monthLabel(state.date);
   }
 }
 
-function renderDayCalendar(dateValue) {
-  const all = getDayTasks(dateValue);
+function calendarTaskMarkup(task) {
+  return `
+    <button type="button"
+      class="calendar-task priority-${escapeHTML(task.priority)}"
+      data-task-action="edit"
+      data-task-id="${escapeHTML(task.id)}"
+      title="${escapeHTML(task.title)}">
+      <span>${escapeHTML(task.time)}</span>
+      ${escapeHTML(task.title)}
+    </button>
+  `;
+}
 
-  const scheduled = all.filter(task => task.time);
-  const unscheduled = all.filter(task => !task.time);
+function renderDayCalendar() {
+  const date = state.date;
+  const key = dateKey(date);
+  const tasks = state.tasks
+    .filter(task => task.date === key && !task.inbox)
+    .sort((a, b) => getTaskTime(a).localeCompare(getTaskTime(b)));
 
-  const currentHour = new Date().getHours();
-  const isToday = dateValue === localDate();
+  const hours = Array.from({ length: 15 }, (_, index) => index + 6);
 
-  let html = '<div class="day-calendar">';
+  return `
+    <div class="day-calendar">
+      <div class="calendar-day-heading">
+        ${formatDate(date, { weekday: "long", day: "numeric", month: "long" })}
+      </div>
+      ${hours.map(hour => {
+        const time = `${pad(hour)}:00`;
+        const matching = tasks.filter(task =>
+          Number(getTaskTime(task).split(":")[0]) === hour
+        );
 
-  for (let hour = 6; hour <= 22; hour++) {
-    html += `
-      <div class="day-row">
-        <div class="day-time">${String(hour % 12 || 12).padStart(2, "0")}:00 ${hour < 12 ? "AM" : "PM"}</div>
-        <div class="day-slot" data-drop-date="${dateValue}" data-drop-time="${String(hour).padStart(2, "0")}:00">
-    `;
-
-    scheduled
-      .filter(task => Number(task.time.split(":")[0]) === hour)
-      .forEach(task => {
-        html += `
-          <button type="button"
-            class="day-task ${task.completed ? "completed" : ""}"
-            draggable="true"
-            data-drag-task="${escapeHTML(task.id)}"
-            data-action="edit-calendar"
-            data-id="${escapeHTML(task.id)}">
-            <span class="day-task-content">
-              <span class="day-task-title">${escapeHTML(task.title)}</span>
-              <span class="day-task-meta">${escapeHTML(task.subject)} · ${formatTime(task.time)} · ${formatMinutes(task.duration)}</span>
-            </span>
-          </button>
+        return `
+          <div class="calendar-hour" data-date="${key}" data-time="${time}">
+            <div class="calendar-hour-label">${time}</div>
+            <div class="calendar-hour-content">
+              ${matching.map(calendarTaskMarkup).join("")}
+              <button type="button" class="calendar-add"
+                data-calendar-add="${key}" data-time="${time}"
+                aria-label="Add task at ${time}">+</button>
+            </div>
+          </div>
         `;
-      });
-
-    html += "</div></div>";
-
-    if (isToday && currentHour === hour) {
-      html += '<div class="current-time-line" aria-label="Current time"></div>';
-    }
-  }
-
-  html += "</div>";
-
-  if (unscheduled.length) {
-    html += '<div class="day-calendar"><p class="eyebrow">WITHOUT A TIME</p>';
-
-    unscheduled.forEach(task => {
-      html += `
-        <button type="button"
-          class="day-task ${task.completed ? "completed" : ""}"
-          data-action="edit-calendar"
-          data-id="${escapeHTML(task.id)}">
-          <span class="day-task-content">
-            <span class="day-task-title">${escapeHTML(task.title)}</span>
-            <span class="day-task-meta">${escapeHTML(task.subject)} · ${formatMinutes(task.duration)}</span>
-          </span>
-        </button>
-      `;
-    });
-
-    html += "</div>";
-  }
-
-  if (!all.length) {
-    html += '<div class="calendar-empty">No tasks planned for this day. Add a task to build your schedule.</div>';
-  }
-
-  $("#calendarView").innerHTML = html;
+      }).join("")}
+    </div>
+  `;
 }
 
-function renderWeekCalendar(startDate) {
-  let html = '<div class="week-calendar">';
+function renderWeekCalendar() {
+  const first = startOfWeek(state.date);
+  const days = Array.from({ length: 7 }, (_, index) => dateOffset(first, index));
 
-  for (let i = 0; i < 7; i++) {
-    const day = new Date(startDate);
-    day.setDate(startDate.getDate() + i);
+  return `
+    <div class="week-calendar">
+      ${days.map(date => {
+        const key = dateKey(date);
+        const tasks = state.tasks
+          .filter(task => task.date === key && !task.inbox)
+          .sort((a, b) => getTaskTime(a).localeCompare(getTaskTime(b)));
 
-    const dateValue = localDate(day);
-    const dayTasks = getDayTasks(dateValue);
-
-    html += `
-      <div class="week-day ${dateValue === localDate() ? "is-today" : ""}"
-        data-drop-date="${dateValue}">
-        <div class="week-day-heading">
-          <span>${day.toLocaleDateString("en-IN", { weekday: "short" })}</span>
-          <strong>${day.getDate()}</strong>
-        </div>
-    `;
-
-    dayTasks.slice(0, 5).forEach(task => {
-      html += `
-        <button type="button"
-          class="week-day-task ${task.completed ? "completed" : ""}"
-          data-action="edit-calendar"
-          data-id="${escapeHTML(task.id)}"
-          title="${escapeHTML(task.title)}">
-          ${escapeHTML(task.time ? formatTime(task.time) + " " : "")}${escapeHTML(task.title)}
-        </button>
-      `;
-    });
-
-    if (dayTasks.length > 5) {
-      html += `<span class="muted tiny">+${dayTasks.length - 5} more</span>`;
-    }
-
-    html += "</div>";
-  }
-
-  html += "</div>";
-  $("#calendarView").innerHTML = html;
+        return `
+          <section class="week-day ${isToday(date) ? "is-today" : ""}"
+            data-date="${key}">
+            <header>
+              <span>${formatDate(date, { weekday: "short" })}</span>
+              <strong>${date.getDate()}</strong>
+            </header>
+            <button type="button" class="week-add-slot"
+              data-calendar-add="${key}" data-time="09:00">+ Add</button>
+            <div class="week-day-tasks">
+              ${tasks.map(calendarTaskMarkup).join("")}
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
-function renderMonthCalendar(date) {
-  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
-  const start = new Date(firstDay);
-  start.setDate(1 - firstDay.getDay());
+function renderMonthCalendar() {
+  const first = new Date(state.date.getFullYear(), state.date.getMonth(), 1);
+  const gridStart = startOfWeek(first);
+  const days = Array.from({ length: 42 }, (_, index) =>
+    dateOffset(gridStart, index)
+  );
 
-  let html = `
+  return `
     <div class="month-calendar">
       <div class="month-weekdays">
-        ${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
           .map(day => `<span>${day}</span>`).join("")}
       </div>
       <div class="month-grid">
+        ${days.map(date => {
+          const key = dateKey(date);
+          const tasks = state.tasks.filter(task =>
+            task.date === key && !task.inbox
+          );
+
+          return `
+            <div class="month-day
+              ${date.getMonth() !== state.date.getMonth() ? "outside-month" : ""}
+              ${isToday(date) ? "is-today" : ""}"
+              data-date="${key}">
+              <button type="button" class="month-day-number"
+                data-select-date="${key}">${date.getDate()}</button>
+              ${tasks.slice(0, 3).map(calendarTaskMarkup).join("")}
+              ${tasks.length > 3
+                ? `<span class="more-tasks">+${tasks.length - 3} more</span>`
+                : ""}
+              <button type="button" class="month-add"
+                data-calendar-add="${key}" data-time="09:00">+</button>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
   `;
-
-  for (let i = 0; i < 42; i++) {
-    const day = new Date(start);
-    day.setDate(start.getDate() + i);
-
-    const value = localDate(day);
-    const dayTasks = getDayTasks(value);
-
-    const classes = [
-      "month-cell",
-      day.getMonth() !== date.getMonth() ? "other-month" : "",
-      value === localDate() ? "is-today" : "",
-      value === calendarDate ? "selected" : ""
-    ].filter(Boolean).join(" ");
-
-    html += `
-      <button type="button" class="${classes}"
-        data-month-date="${value}"
-        aria-label="${formatDate(value, { weekday: "long", year: "numeric" })}">
-        <span class="month-cell-number">${day.getDate()}</span>
-        <span class="month-cell-dots">
-          ${dayTasks.slice(0, 5).map(task =>
-            `<i class="${task.completed ? "completed-dot" : ""}"></i>`
-          ).join("")}
-        </span>
-      </button>
-    `;
-  }
-
-  html += "</div></div>";
-  $("#calendarView").innerHTML = html;
 }
 
-$("#calendarView").addEventListener("click", event => {
-  const taskButton = event.target.closest("[data-action='edit-calendar']");
+function renderCalendar() {
+  const container = $("#calendarView");
+  if (!container) return;
 
-  if (taskButton) {
-    const task = tasks.find(item => item.id === taskButton.dataset.id);
-    if (task) openTaskForm(task);
-    return;
+  renderCalendarHeader();
+
+  if (state.calendar === "day") {
+    container.innerHTML = renderDayCalendar();
+  } else if (state.calendar === "week") {
+    container.innerHTML = renderWeekCalendar();
+  } else {
+    container.innerHTML = renderMonthCalendar();
   }
+}
 
-  const cell = event.target.closest("[data-month-date]");
-  if (cell) {
-    calendarDate = cell.dataset.monthDate;
-    calendarMode = "day";
+function initializeCalendar() {
+  $$("[data-calendar]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.calendar = button.dataset.calendar;
 
-    $$("[data-calendar]").forEach(button => {
-      button.classList.toggle("active", button.dataset.calendar === "day");
+      $$("[data-calendar]").forEach(item => {
+        item.classList.toggle("active", item === button);
+        item.setAttribute("aria-pressed", String(item === button));
+      });
+
+      renderCalendar();
     });
+  });
 
-    renderCalendar();
-    openTaskForm(null, calendarDate);
-  }
-});
-
-/* ==========================================
-   DRAG AND DROP RESCHEDULING
-========================================== */
-
-$("#calendarView").addEventListener("dragstart", event => {
-  const taskElement = event.target.closest("[data-drag-task]");
-  if (!taskElement) return;
-
-  event.dataTransfer.setData("text/plain", taskElement.dataset.dragTask);
-  event.dataTransfer.effectAllowed = "move";
-});
-
-$("#calendarView").addEventListener("dragover", event => {
-  const target = event.target.closest("[data-drop-date]");
-  if (!target) return;
-
-  event.preventDefault();
-  event.dataTransfer.dropEffect = "move";
-});
-
-$("#calendarView").addEventListener("drop", event => {
-  const target = event.target.closest("[data-drop-date]");
-  if (!target) return;
-
-  event.preventDefault();
-
-  const id = event.dataTransfer.getData("text/plain");
-  const task = tasks.find(item => item.id === id);
-
-  if (!task) return;
-
-  const oldDate = task.date;
-  const oldTime = task.time;
-
-  task.date = target.dataset.dropDate;
-
-  if (target.dataset.dropTime) {
-    task.time = target.dataset.dropTime;
-  }
-
-  task.inbox = false;
-
-  if (!writeJSON(STORAGE.tasks, tasks)) {
-    task.date = oldDate;
-    task.time = oldTime;
-    return;
-  }
-
-  calendarDate = task.date;
-  toast("Task rescheduled.");
-  renderApp();
-});
-
-/* ==========================================
-   STATISTICS AND STREAK
-========================================== */
-
-function getTasksForToday() {
-  return tasks.filter(task =>
-    !task.inbox && task.date === localDate()
-  );
-}
-
-function renderStats() {
-  const todayTasks = getTasksForToday();
-
-  const planned = todayTasks.reduce(
-    (sum, task) => sum + (Number(task.duration) || 0), 0
-  );
-
-  const completed = todayTasks.filter(task => task.completed).length;
-
-  const percentage = todayTasks.length
-    ? Math.round(completed / todayTasks.length * 100)
-    : 0;
-
-  $("#plannedToday").textContent = formatMinutes(planned);
-  $("#plannedTasks").textContent =
-    `${todayTasks.length} ${todayTasks.length === 1 ? "task" : "tasks"}`;
-
-  $("#completedToday").innerHTML =
-    `${completed} <small>/ ${todayTasks.length}</small>`;
-
-  $("#completionRate").textContent = `${percentage}%`;
-  $("#focusToday").textContent = `${stats.focusMinutes}m`;
-
-  let streak = 0;
-  let checkDate = localDate();
-
-  while (stats.completedDates.includes(checkDate)) {
-    streak++;
-    checkDate = addDays(checkDate, -1);
-  }
-
-  $("#streakCount").textContent =
-    `${streak} ${streak === 1 ? "day" : "days"}`;
-
-  $("#todayCount").textContent = todayTasks.filter(t => !t.completed).length;
-  $("#inboxCount").textContent = tasks.filter(t => t.inbox).length;
-}
-
-/* ==========================================
-   SUBJECT OVERVIEW
-========================================== */
-
-function renderSubjectOverview(target = "#subjectOverview") {
-  const element = $(target);
-  if (!element) return;
-
-  const groups = new Map();
-
-  tasks.forEach(task => {
-    if (!groups.has(task.subject)) {
-      groups.set(task.subject, { total: 0, completed: 0, minutes: 0 });
+  $("#prevDate")?.addEventListener("click", () => {
+    if (state.calendar === "day") {
+      state.date = dateOffset(state.date, -1);
+    } else if (state.calendar === "week") {
+      state.date = dateOffset(state.date, -7);
+    } else {
+      state.date = new Date(
+        state.date.getFullYear(),
+        state.date.getMonth() - 1,
+        1
+      );
     }
 
-    const group = groups.get(task.subject);
-    group.total++;
-    group.minutes += task.duration;
-
-    if (task.completed) group.completed++;
+    renderCalendar();
   });
 
-  if (!groups.size) {
-    element.innerHTML = `
-      <div class="empty-state">
-        Add tasks to see your subject progress.
-      </div>
-    `;
-    return;
-  }
+  $("#nextDate")?.addEventListener("click", () => {
+    if (state.calendar === "day") {
+      state.date = dateOffset(state.date, 1);
+    } else if (state.calendar === "week") {
+      state.date = dateOffset(state.date, 7);
+    } else {
+      state.date = new Date(
+        state.date.getFullYear(),
+        state.date.getMonth() + 1,
+        1
+      );
+    }
 
-  element.innerHTML = [...groups.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, group]) => {
-      const percent = Math.round(group.completed / group.total * 100);
+    renderCalendar();
+  });
 
-      return `
-        <div class="subject-item">
-          <div class="subject-item-heading">
-            <strong>${escapeHTML(name)}</strong>
-            <span>${percent}%</span>
-          </div>
-          <p>${group.completed} of ${group.total} tasks completed</p>
-          <p>Planned study time: ${formatMinutes(group.minutes)}</p>
-          <div class="progress-track">
-            <div class="progress-bar" style="width:${percent}%"></div>
-          </div>
-        </div>
-      `;
-    }).join("");
+  $("#goToday")?.addEventListener("click", () => {
+    state.date = startOfDay(new Date());
+    renderCalendar();
+  });
+
+  $("#calendarView")?.addEventListener("click", event => {
+    const addButton = event.target.closest("[data-calendar-add]");
+    if (addButton) {
+      openTaskModal(null, {
+        date: addButton.dataset.calendarAdd,
+        time: addButton.dataset.time
+      });
+      return;
+    }
+
+    const dateButton = event.target.closest("[data-select-date]");
+    if (dateButton) {
+      state.date = parseDate(dateButton.dataset.selectDate);
+      state.calendar = "day";
+
+      $$("[data-calendar]").forEach(button => {
+        button.classList.toggle(
+          "active",
+          button.dataset.calendar === "day"
+        );
+      });
+
+      renderCalendar();
+    }
+  });
+
+  $("#calendarView")?.addEventListener("dragstart", event => {
+    const taskCard = event.target.closest("[data-task-id]");
+    if (!taskCard) return;
+
+    state.draggedTaskId = taskCard.dataset.taskId;
+    event.dataTransfer?.setData("text/plain", state.draggedTaskId);
+  });
+
+  $("#calendarView")?.addEventListener("dragover", event => {
+    if (event.target.closest("[data-date]")) {
+      event.preventDefault();
+    }
+  });
+
+  $("#calendarView")?.addEventListener("drop", event => {
+    const target = event.target.closest("[data-date]");
+    if (!target || !state.draggedTaskId) return;
+
+    event.preventDefault();
+    moveTask(state.draggedTaskId, target.dataset.date);
+    state.draggedTaskId = null;
+  });
 }
 
-/* ==========================================
-   WEEKLY CHART
-========================================== */
+/* ---------- Search and filters ---------- */
 
-function renderWeekChart(target = "#weekChart") {
-  const element = $(target);
-  if (!element) return;
+function initializeFilters() {
+  $("#searchInput")?.addEventListener("input", event => {
+    state.search = event.target.value.trim();
+    renderTaskList();
+  });
 
-  const today = parseDate(localDate());
-  const start = new Date(today);
-  start.setDate(today.getDate() - 6);
+  $("#filterStatus")?.addEventListener("change", event => {
+    state.filter = event.target.value;
+    renderTaskList();
+  });
 
-  const days = [];
+  $("#sortTasks")?.addEventListener("change", event => {
+    state.sort = event.target.value;
+    renderTaskList();
+  });
 
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
+  $("#showAllTasks")?.addEventListener("click", () => {
+    state.page = "all";
+    state.selectedSubject = null;
+    renderApp();
+  });
+}
+/* =========================================
+   Part 3: Navigation, Pomodoro, Analytics
+   and App Initialization
+========================================= */
 
-    const value = localDate(date);
-    const count = tasks.filter(task =>
-      task.completed &&
-      task.completedAt &&
-      localDate(new Date(task.completedAt)) === value
-    ).length;
+/* ---------- Date helper ---------- */
 
-    days.push({
-      value,
-      label: date.toLocaleDateString("en-IN", { weekday: "short" }),
-      count
+function dateOffset(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return startOfDay(result);
+}
+
+/* ---------- Navigation ---------- */
+
+function initializeNavigation() {
+  const navItems = $$(".nav-item[data-view]");
+
+  navItems.forEach(button => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.view;
+
+      state.page = view;
+      state.selectedSubject = null;
+
+      navItems.forEach(item => {
+        item.classList.toggle("active", item === button);
+        item.setAttribute("aria-current", item === button ? "page" : "false");
+      });
+
+      const pageTitles = {
+        today: ["Today", "Your day, organized."],
+        upcoming: ["Upcoming", "Plan what comes next."],
+        inbox: ["Inbox", "Tasks waiting to be scheduled."],
+        completed: ["Completed", "Look at what you've accomplished."],
+        analytics: ["Insights", "See your progress over time."],
+        about: ["About FocusFlow", "Your personal study planner."]
+      };
+
+      const [title, subtitle] = pageTitles[view] ||
+        [view.charAt(0).toUpperCase() + view.slice(1), ""];
+
+      const pageTitle = $("#pageTitle");
+      const pageSubtitle = $("#pageSubtitle");
+      const breadcrumb = $("#breadcrumbCurrent");
+
+      if (pageTitle) pageTitle.textContent = title;
+      if (pageSubtitle) pageSubtitle.textContent = subtitle;
+      if (breadcrumb) breadcrumb.textContent = title;
+
+      $$(".app-view, [data-page]").forEach(section => {
+        const sectionView =
+          section.dataset.page ||
+          section.id.replace(/Page$/, "").replace(/^view-/, "");
+
+        const active = sectionView === view;
+        section.hidden = !active;
+        section.classList.toggle("active", active);
+      });
+
+      if (view === "analytics") renderAnalytics();
+      renderApp();
+
+      $("#sidebar")?.classList.remove("open");
+      $("#mobileScrim")?.classList.remove("visible");
     });
-  }
-
-  const max = Math.max(1, ...days.map(day => day.count));
-
-  element.innerHTML = days.map(day => {
-    const height = Math.max(3, day.count / max * 100);
-
-    return `
-      <div class="chart-day ${day.value === localDate() ? "today" : ""}">
-        <span class="chart-value">${day.count}</span>
-        <div class="chart-bar-area">
-          <div class="chart-bar" style="height:${height}%"></div>
-        </div>
-        <span class="chart-label">${day.label}</span>
-      </div>
-    `;
-  }).join("");
-
-  const total = days.reduce((sum, day) => sum + day.count, 0);
-  $("#weekTotal").textContent = `${total} completed`;
-}
-
-/* ==========================================
-   ANALYTICS PAGE
-========================================== */
-
-function renderAnalytics() {
-  const total = tasks.length;
-  const completed = tasks.filter(task => task.completed).length;
-  const pending = total - completed;
-  const minutes = tasks
-    .filter(task => task.completed)
-    .reduce((sum, task) => sum + task.duration, 0);
-
-  $("#analyticsMetrics").innerHTML = [
-    ["All tasks", total],
-    ["Completed", completed],
-    ["Pending", pending],
-    ["Completion rate", `${total ? Math.round(completed / total * 100) : 0}%`],
-    ["Planned completed time", formatMinutes(minutes)],
-    ["Focus sessions", stats.completedSessions]
-  ].map(([label, value]) => `
-    <div class="analytics-metric">
-      <span>${label}</span>
-      <strong>${value}</strong>
-    </div>
-  `).join("");
-
-  renderWeekChart("#analyticsChart");
-  renderSubjectOverview("#analyticsSubjects");
-}
-
-/* ==========================================
-   POMODORO TIMER
-========================================== */
-
-const CIRCUMFERENCE = 2 * Math.PI * 105;
-
-function renderTimer() {
-  const minutes = Math.floor(remainingSeconds / 60);
-  const seconds = remainingSeconds % 60;
-
-  $("#timerTime").textContent =
-    `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-
-  $("#timerCaption").textContent = TIMER_MODES[timerMode].label;
-
-  $("#timerProgress").style.strokeDasharray = CIRCUMFERENCE;
-
-  $("#timerProgress").style.strokeDashoffset =
-    CIRCUMFERENCE * (
-      1 - remainingSeconds / TIMER_MODES[timerMode].seconds
-    );
-
-  $("#timerFace").classList.toggle("break-mode", timerMode !== "focus");
-
-  $$("[data-timer-mode]").forEach(button => {
-    button.classList.toggle(
-      "active",
-      button.dataset.timerMode === timerMode
-    );
   });
 
-  $("#timerStart").innerHTML = timerRunning
-    ? "Pause timer <span>Ⅱ</span>"
-    : remainingSeconds === 0
-      ? "Start again <span>▶</span>"
-      : "Start focusing <span>▶</span>";
+  $("#menuToggle")?.addEventListener("click", () => {
+    $("#sidebar")?.classList.toggle("open");
+    $("#mobileScrim")?.classList.toggle("visible");
+  });
 
-  $("#sessionCount").textContent = stats.completedSessions;
-  $("#focusMinutes").textContent = `${stats.focusMinutes} focus minutes`;
+  $("#mobileScrim")?.addEventListener("click", () => {
+    $("#sidebar")?.classList.remove("open");
+    $("#mobileScrim")?.classList.remove("visible");
+  });
+}
 
-  document.title = timerRunning
-    ? `${$("#timerTime").textContent} — FocusFlow`
-    : "FocusFlow | Smart Study Planner";
+/* ---------- Dashboard metrics ---------- */
+
+function getTodayTasks() {
+  return state.tasks.filter(task =>
+    sameDay(task.date, new Date()) && !task.inbox
+  );
+}
+
+function renderDashboardMetrics() {
+  const todayTasks = getTodayTasks();
+  const completed = todayTasks.filter(isCompleted);
+  const plannedMinutes = todayTasks
+    .filter(task => !isCompleted(task))
+    .reduce((sum, task) => sum + getTaskDuration(task), 0);
+
+  const metrics = {
+    todayCount: todayTasks.filter(task => !isCompleted(task)).length,
+    plannedToday: plannedMinutes,
+    plannedTasks: todayTasks.length,
+    completedToday: completed.length,
+    completionRate: todayTasks.length
+      ? Math.round(completed.length / todayTasks.length * 100)
+      : 0,
+    focusToday: state.stats.dailyFocus[dateKey(new Date())] || 0,
+    inboxCount: state.tasks.filter(task =>
+      task.inbox && !isCompleted(task)
+    ).length
+  };
+
+  Object.entries(metrics).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+
+    if (id === "plannedToday") {
+      element.textContent = `${value} min`;
+    } else if (id === "focusToday") {
+      element.textContent = `${value} min`;
+    } else if (id === "completionRate") {
+      element.textContent = `${value}%`;
+    } else {
+      element.textContent = value;
+    }
+  });
+
+  const streak = $("#streakCount");
+  if (streak) streak.textContent = state.stats.streak || 0;
+
+  const focusMinutes = $("#focusMinutes");
+  if (focusMinutes) {
+    focusMinutes.textContent =
+      state.stats.totalFocusMinutes || 0;
+  }
+
+  updateSidebarCounts();
+}
+
+function updateSidebarCounts() {
+  const todayCount = $("#todayCount");
+  const inboxCount = $("#inboxCount");
+
+  if (todayCount) {
+    todayCount.textContent = state.tasks.filter(task =>
+      sameDay(task.date, new Date()) &&
+      !task.inbox &&
+      !isCompleted(task)
+    ).length;
+  }
+
+  if (inboxCount) {
+    inboxCount.textContent = state.tasks.filter(task =>
+      task.inbox && !isCompleted(task)
+    ).length;
+  }
+}
+
+/* ---------- Focus / Pomodoro timer ---------- */
+
+const TIMER_MODES = {
+  focus: 25 * 60,
+  short: 5 * 60,
+  long: 15 * 60
+};
+
+function formatTime(seconds) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safe / 60);
+  const remainingSeconds = safe % 60;
+
+  return `${pad(minutes)}:${pad(remainingSeconds)}`;
+}
+
+function updateTimerDisplay() {
+  const time = $("#timerTime");
+  const face = $("#timerFace");
+  const progress = $("#timerProgress");
+  const caption = $("#timerCaption");
+
+  if (time) time.textContent = formatTime(state.timerRemaining);
+
+  if (face) {
+    face.setAttribute("aria-label", formatTime(state.timerRemaining));
+    face.classList.toggle("is-running", state.timerRunning);
+  }
+
+  if (progress) {
+    const total = TIMER_MODES[state.timerMode] || TIMER_MODES.focus;
+    const fraction = total
+      ? (total - state.timerRemaining) / total
+      : 0;
+
+    progress.style.setProperty("--progress", `${fraction * 100}%`);
+    progress.style.strokeDashoffset = String(1 - fraction);
+  }
+
+  if (caption) {
+    const captions = {
+      focus: "Time to focus",
+      short: "Take a short break",
+      long: "Recharge with a long break"
+    };
+    caption.textContent = captions[state.timerMode] || captions.focus;
+  }
+
+  const startButton = $("#timerStart");
+  if (startButton) {
+    startButton.textContent = state.timerRunning ? "Pause" : "Start";
+    startButton.setAttribute(
+      "aria-label",
+      state.timerRunning ? "Pause timer" : "Start timer"
+    );
+  }
+
+  const sessionCount = $("#sessionCount");
+  if (sessionCount) {
+    sessionCount.textContent = state.stats.completedSessions || 0;
+  }
 }
 
 function stopTimer() {
-  if (timerInterval !== null) {
-    clearInterval(timerInterval);
-    timerInterval = null;
+  if (state.timerInterval) {
+    clearInterval(state.timerInterval);
+    state.timerInterval = null;
   }
 
-  timerRunning = false;
+  state.timerRunning = false;
+  updateTimerDisplay();
 }
 
-function completeTimer() {
+function selectTimerMode(mode) {
+  if (!Object.hasOwn(TIMER_MODES, mode)) return;
+
   stopTimer();
-  remainingSeconds = 0;
+  state.timerMode = mode;
+  state.timerSeconds = TIMER_MODES[mode];
+  state.timerRemaining = TIMER_MODES[mode];
 
-  if (timerMode === "focus") {
-    stats.completedSessions++;
-    stats.focusMinutes += 25;
+  $$("[data-timer-mode]").forEach(button => {
+    const active = button.dataset.timerMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
 
-    const today = localDate();
-    if (!stats.completedDates.includes(today)) {
-      stats.completedDates.push(today);
-    }
-
-    writeJSON(STORAGE.stats, stats);
-    $("#timerMessage").textContent =
-      "Focus session complete! Take a well-earned break.";
-
-    toast("Focus session complete. Great work!");
-
-    if (selectedFocusTask) {
-      const task = tasks.find(item => item.id === selectedFocusTask);
-
-      if (task && !task.completed) {
-        $("#timerMessage").textContent =
-          "Session complete. You can mark your task done when ready.";
-      }
-    }
-  } else {
-    $("#timerMessage").textContent =
-      "Break finished. Ready for another session?";
-
-    toast("Break finished. Ready to focus again?");
-  }
-
-  renderTimer();
-  renderStats();
-}
-
-function updateTimer() {
-  if (!timerRunning) return;
-
-  remainingSeconds = Math.max(
-    0,
-    Math.ceil((timerEndTime - Date.now()) / 1000)
-  );
-
-  if (remainingSeconds <= 0) {
-    completeTimer();
-    return;
-  }
-
-  renderTimer();
+  updateTimerDisplay();
 }
 
 function startTimer() {
-  if (timerRunning) {
+  if (state.timerRunning) {
     stopTimer();
-    $("#timerMessage").textContent = "Timer paused. Resume when ready.";
-    renderTimer();
     return;
   }
 
-  if (remainingSeconds <= 0) {
-    remainingSeconds = TIMER_MODES[timerMode].seconds;
+  if (state.timerRemaining <= 0) {
+    state.timerRemaining = state.timerSeconds;
   }
 
-  timerRunning = true;
-  timerEndTime = Date.now() + remainingSeconds * 1000;
+  state.timerRunning = true;
+  updateTimerDisplay();
 
-  $("#timerMessage").textContent = timerMode === "focus"
-    ? "One task. One session. Give it your attention."
-    : "Relax your mind and recharge.";
+  state.timerInterval = setInterval(() => {
+    state.timerRemaining -= 1;
 
-  timerInterval = setInterval(updateTimer, 250);
-  renderTimer();
+    if (state.timerRemaining <= 0) {
+      state.timerRemaining = 0;
+      stopTimer();
+      finishTimerSession();
+      return;
+    }
+
+    updateTimerDisplay();
+  }, 1000);
 }
 
 function resetTimer() {
   stopTimer();
-  remainingSeconds = TIMER_MODES[timerMode].seconds;
-  $("#timerMessage").textContent = "Timer reset. Start when you're ready.";
-  renderTimer();
+  state.timerRemaining = state.timerSeconds;
+  updateTimerDisplay();
 }
 
-function selectTimerMode(mode) {
-  if (!TIMER_MODES[mode]) return;
+function finishTimerSession() {
+  if (state.timerMode === "focus") {
+    const minutes = Math.round(state.timerSeconds / 60);
+    const today = dateKey(new Date());
 
-  stopTimer();
-  timerMode = mode;
-  remainingSeconds = TIMER_MODES[mode].seconds;
+    state.stats.totalFocusMinutes =
+      (state.stats.totalFocusMinutes || 0) + minutes;
 
-  renderTimer();
-}
+    state.stats.completedSessions =
+      (state.stats.completedSessions || 0) + 1;
 
-$("#timerStart").addEventListener("click", startTimer);
-$("#timerReset").addEventListener("click", resetTimer);
+    state.stats.dailyFocus[today] =
+      (state.stats.dailyFocus[today] || 0) + minutes;
 
-$$("[data-timer-mode]").forEach(button => {
-  button.addEventListener("click", () => {
-    selectTimerMode(button.dataset.timerMode);
-  });
-});
+    updateStudyStreak(today);
+    saveStats();
 
-$("#openFocusBtn").addEventListener("click", () => {
-  selectedFocusTask = null;
-  $("#focusSelectedTask").textContent =
-    "Focus on one thing at a time. You've got this.";
-  openModal("focusModal");
-});
+    state.sessionCount += 1;
+    showToast("Focus session complete! Great work.");
 
-/* ==========================================
-   APPLICATION RENDER
-========================================== */
+    if (state.selectedFocusTask) {
+      const task = state.tasks.find(
+        item => item.id === state.selectedFocusTask
+      );
 
-function renderApp() {
-  renderSubjects();
-  renderStats();
-  renderTasks();
-  renderCalendar();
-  renderSubjectOverview();
-  renderWeekChart();
-  renderTimer();
+      if (task) {
+        task.focusMinutes = (task.focusMinutes || 0) + minutes;
+        saveTasks();
+      }
+    }
 
-  if (activeView === "analytics") {
-    renderAnalytics();
+    renderApp();
+  } else {
+    showToast("Break complete. Ready for another session?");
   }
 
-  updateNavigation();
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("FocusFlow", {
+      body: state.timerMode === "focus"
+        ? "Focus session complete. Take a break!"
+        : "Break complete. Time to get back to work."
+    });
+  }
+
+  state.timerRemaining = state.timerSeconds;
+  updateTimerDisplay();
 }
 
-/* ==========================================
-   INITIALIZE
-========================================== */
+function updateStudyStreak(today) {
+  const last = state.stats.lastStudyDate;
 
-function initialize() {
-  // Keep legacy tasks and their IDs intact.
-  tasks = tasks.map(normalizeTask);
+  if (last === today) return;
 
-  // Give old tasks a sensible default date if needed.
-  tasks.forEach(task => {
-    if (!task.date && task.deadline) {
-      task.date = task.deadline;
+  const yesterday = dateKey(dateOffset(new Date(), -1));
+
+  if (last === yesterday) {
+    state.stats.streak = (state.stats.streak || 0) + 1;
+  } else {
+    state.stats.streak = 1;
+  }
+
+  state.stats.lastStudyDate = today;
+}
+
+function openFocusModal() {
+  openModal("focusModal");
+
+  const task = state.tasks.find(
+    item => item.id === state.selectedFocusTask
+  );
+
+  const selected = $("#focusSelectedTask");
+  if (selected) {
+    selected.textContent = task
+      ? `Focusing on: ${task.title}`
+      : "Choose a task and start focusing.";
+  }
+
+  updateTimerDisplay();
+}
+
+function initializeTimer() {
+  $$("[data-timer-mode]").forEach(button => {
+    button.addEventListener("click", () => {
+      selectTimerMode(button.dataset.timerMode);
+    });
+  });
+
+  $("#timerStart")?.addEventListener("click", startTimer);
+  $("#timerReset")?.addEventListener("click", resetTimer);
+
+  $("#openFocusBtn")?.addEventListener("click", () => {
+    state.selectedFocusTask = null;
+    openFocusModal();
+  });
+
+  $("#focusBannerBtn")?.addEventListener("click", () => {
+    state.selectedFocusTask = null;
+    openFocusModal();
+  });
+
+  $("#timerMessage")?.addEventListener("click", () => {
+    if ("Notification" in window &&
+        Notification.permission === "default") {
+      Notification.requestPermission();
     }
   });
 
-  // Set the task form's initial date.
-  $("#taskDate").value = localDate();
-
-  // Apply the saved appearance.
-  applyTheme(readJSON(STORAGE.theme, "light"));
-
-  // Display the profile selection first if no name was saved.
-  if (!profile.name || !profile.name.trim()) {
-    showNameScreen();
-  } else {
-    showDashboard();
-  }
-
-  // Persist normalized tasks if the existing storage is usable.
-  writeJSON(STORAGE.tasks, tasks);
+  updateTimerDisplay();
 }
 
-initialize();
+/* ---------- Analytics ---------- */
+
+function getLastSevenDays() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = dateOffset(new Date(), index - 6);
+    const key = dateKey(date);
+
+    return {
+      date,
+      key,
+      label: formatDate(date, { weekday: "short" }),
+      minutes: state.stats.dailyFocus[key] || 0
+    };
+  });
+}
+
+function renderWeeklyChart(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const days = getLastSevenDays();
+  const maximum = Math.max(30, ...days.map(day => day.minutes));
+
+  container.innerHTML = `
+    <div class="simple-bar-chart">
+      ${days.map(day => {
+        const height = Math.max(3, day.minutes / maximum * 100);
+
+        return `
+          <div class="chart-bar-wrap" title="${day.minutes} focus minutes">
+            <div class="chart-bar"
+              style="height:${height}%"
+              aria-label="${day.minutes} minutes"></div>
+            <span class="chart-label">${escapeHTML(day.label)}</span>
+            <span class="chart-value">${day.minutes}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderSubjectAnalytics() {
+  const container = $("#analyticsSubjects");
+  if (!container) return;
+
+  const totals = {};
+
+  state.tasks.forEach(task => {
+    totals[task.subject] = (totals[task.subject] || 0) +
+      (Number(task.focusMinutes) || 0);
+  });
+
+  const entries = Object.entries(totals)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (!entries.length) {
+    container.innerHTML = "<p>No subject activity yet.</p>";
+    return;
+  }
+
+  const maximum = Math.max(1, ...entries.map(entry => entry[1]));
+
+  container.innerHTML = entries.map(([subject, minutes]) => `
+    <div class="subject-analytics-row">
+      <div class="subject-analytics-heading">
+        <span>${escapeHTML(subject)}</span>
+        <strong>${minutes} min</strong>
+      </div>
+      <div class="subject-progress-track">
+        <div class="subject-progress-fill"
+          style="width:${minutes / maximum * 100}%"></div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderAnalytics() {
+  renderWeeklyChart("analyticsChart");
+  renderSubjectAnalytics();
+
+  const metrics = $("#analyticsMetrics");
+  if (metrics) {
+    const completed = state.tasks.filter(isCompleted).length;
+    const total = state.tasks.length;
+    const minutes = state.stats.totalFocusMinutes || 0;
+    const sessions = state.stats.completedSessions || 0;
+
+    metrics.innerHTML = `
+      <div class="analytics-metric">
+        <span>Total tasks</span>
+        <strong>${total}</strong>
+      </div>
+      <div class="analytics-metric">
+        <span>Completed</span>
+        <strong>${completed}</strong>
+      </div>
+      <div class="analytics-metric">
+        <span>Focus time</span>
+        <strong>${Math.floor(minutes / 60)}h ${minutes % 60}m</strong>
+      </div>
+      <div class="analytics-metric">
+        <span>Focus sessions</span>
+        <strong>${sessions}</strong>
+      </div>
+    `;
+  }
+
+  const weekTotal = $("#weekTotal");
+  if (weekTotal) {
+    const total = getLastSevenDays()
+      .reduce((sum, day) => sum + day.minutes, 0);
+
+    weekTotal.textContent = `${total} min`;
+  }
+}
+
+/* ---------- Today's task preview ---------- */
+
+function renderTaskPreviews() {
+  const todayTasks = getTodayTasks()
+    .sort((a, b) => getTaskDateTime(a) - getTaskDateTime(b));
+
+  const preview = $("#plannedTasks");
+  if (preview && preview.tagName === "UL") {
+    preview.innerHTML = todayTasks.slice(0, 5).map(task => `
+      <li data-task-id="${escapeHTML(task.id)}">
+        <span>${escapeHTML(task.title)}</span>
+        <span>${escapeHTML(task.time)}</span>
+      </li>
+    `).join("");
+  }
+
+  const subjectOverview = $("#subjectOverview");
+  if (subjectOverview) {
+    const counts = state.subjects.map(subject => ({
+      subject,
+      count: state.tasks.filter(task =>
+        task.subject === subject &&
+        sameDay(task.date, new Date())
+      ).length
+    }));
+
+    subjectOverview.innerHTML = counts.map(item => `
+      <div class="subject-overview-row">
+        <span>${escapeHTML(item.subject)}</span>
+        <strong>${item.count}</strong>
+      </div>
+    `).join("");
+  }
+
+  renderWeeklyChart("weekChart");
+}
+
+/* ---------- Global render ---------- */
+
+function renderApp() {
+  renderProfile();
+  renderSubjects();
+  renderDashboardMetrics();
+  renderCalendar();
+  renderTaskList();
+  renderTaskPreviews();
+
+  if (state.page === "analytics") {
+    renderAnalytics();
+  }
+
+  if (window.lucide?.createIcons) {
+    window.lucide.createIcons();
+  }
+}
+
+/* ---------- Initial data cleanup ---------- */
+
+function initializeData() {
+  state.tasks = Array.isArray(state.tasks)
+    ? state.tasks.map(normalizeTask)
+    : [];
+
+  state.subjects = Array.isArray(state.subjects)
+    ? state.subjects
+        .map(normalizeSubjectName)
+        .filter(Boolean)
+    : [...DEFAULT_SUBJECTS];
+
+  state.subjects = [...new Set(state.subjects)];
+
+  saveTasks();
+  saveSubjects();
+}
+
+/* ---------- Start application ---------- */
+
+function initializeApp() {
+  initializeData();
+  initializeProfile();
+  initializeTheme();
+  initializeModals();
+  initializeSubjects();
+  initializeTaskForm();
+  initializeTaskActions();
+  initializeCalendar();
+  initializeFilters();
+  initializeNavigation();
+  initializeTimer();
+
+  const dateElement = $("#topDate");
+  if (dateElement) {
+    dateElement.textContent = formatDate(new Date(), {
+      weekday: "long",
+      day: "numeric",
+      month: "long"
+    });
+  }
+
+  const year = $("#footerYear");
+  if (year) year.textContent = new Date().getFullYear();
+
+  renderApp();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeApp);
+} else {
+  initializeApp();
+}
