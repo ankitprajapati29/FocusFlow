@@ -1,30 +1,35 @@
-# 🚀 FocusFlow
-
-<h3 align="center">Study Smarter. Stay Focused. Achieve More.</h3>
+# 🚀 FocusFlow — Smart Student Study Planner
 
 <p align="center">
-  <img src="https://img.shields.io/badge/FocusFlow-Study%20Planner-6366F1?style=for-the-badge" alt="FocusFlow"/>
-  <img src="https://img.shields.io/badge/JavaScript-Powered-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript"/>
-  <img src="https://img.shields.io/badge/Status-Active-38BDF8?style=for-the-badge" alt="Status"/>
+  <img src="https://img.shields.io/badge/Samsung%20Innovation%20Campus-SIC%202026-1428A0?style=for-the-badge" alt="Samsung Innovation Campus"/>
+  <img src="https://img.shields.io/badge/Project-SIC%20Mini--Project-6366F1?style=for-the-badge" alt="SIC Mini-Project"/>
 </p>
 
+<h3 align="center">🎯 Study Smarter. Stay Focused. Achieve More.</h3>
+
 <p align="center">
-  A smart, minimal study planner designed to help students organize tasks, track progress, and build better study habits.
+  A student productivity web application developed as part of the Samsung Innovation Campus (SIC) learning journey.
 </p>
 
 ---
 
-### ✨ Features
+## 📌 About the Project
 
-- 📋 **Task Management** — Add, organize, and manage study tasks.
-- ⏱️ **Pomodoro Timer** — Focus with 25-minute study and 5-minute break sessions.
-- 📊 **Progress Tracking** — Monitor your study tasks and completion progress.
-- 📚 **Subject Organization** — Keep your academic work organized.
+**FocusFlow** is a smart study planner designed to help students organize their academic tasks, manage study sessions, and track their progress in one place.
+
+The project aims to make studying more structured and productive through task management, subject-wise organization, and the Pomodoro technique.
+
+## ✨ Key Features
+
+- 📋 **Task Management** — Add and manage daily study tasks.
+- ⏱️ **Pomodoro Timer** — 25-minute focus sessions and 5-minute breaks.
+- 📊 **Progress Tracking** — Track completed and pending tasks.
+- 📚 **Subject Overview** — Organize academic activities.
 - 🔍 **Search & Filters** — Find and sort tasks easily.
-- 💾 **Local Storage** — Keep tasks saved in your browser.
-- 📱 **Responsive UI** — Clean interface across different screen sizes.
+- 💾 **Local Storage** — Save tasks in the browser.
+- 📱 **Responsive Design** — A clean and user-friendly interface.
 
-### 🛠️ Tech Stack
+## 🛠️ Technology Stack
 
 <p>
   <img src="https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white" alt="HTML5"/>
@@ -32,7 +37,7 @@
   <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black" alt="JavaScript"/>
 </p>
 
-### 📂 Project Structure
+## 📂 Project Structure
 
 ```text
 FocusFlow/
@@ -42,18 +47,32 @@ FocusFlow/
 └── README.md
 ```
 
-### 🚀 Getting Started
+## 🚀 How to Run
 
-1. Clone or download this repository.
-2. Open `index.html` in your browser.
-3. Start organizing your study sessions!
+1. Clone this repository.
+2. Open the project folder.
+3. Launch `index.html` in your browser.
+4. Start planning your study sessions.
 
-### 🎯 Goal
+## 👨‍💻 Developer
 
-Make daily studying more structured, focused, and productive.
+**Ankit Prajapati**
+
+Computer Engineering Student
+
+**Program:** Samsung Innovation Campus (SIC) 2026  
+**Project Category:** SIC Mini-Project
+
+- GitHub: [ankitprajapati29](https://github.com/ankitprajapati29)
 
 ---
 
 <p align="center">
-  <b>Built with 💙 for students who want to do better.</b>
+  <b>Built with 💙 by Ankit Prajapati</b>
+  <br/>
+  <i>Learn • Build • Improve</i>
+</p>
+
+<p align="center">
+  #SIC_India_2026
 </p>
