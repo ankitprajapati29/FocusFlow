@@ -72,4 +72,3 @@ Computer Engineering Student
   <br/><br/>
   #SIC_India_2026
 </p>
-**Built by [Ankit Prajapati](https://github.com/ankitprajapati29)
