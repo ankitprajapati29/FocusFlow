@@ -1,7 +1,7 @@
 # 🚀 FocusFlow — Smart Student Study Planner
 
 <p align="center">
-  <a href="https://ankitprajapati29.github.io/FocusFlow//">
+  <a href="https://ankitprajapati29.github.io/FocusFlow/">
     <img src="https://img.shields.io/badge/🌐_LIVE_DEMO-Visit_Website-6366F1?style=for-the-badge" alt="Live Demo"/>
   </a>
 </p>
