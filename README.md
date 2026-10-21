@@ -61,7 +61,7 @@ Computer Engineering Student
 - 🎓 **Program:** Samsung Innovation Campus (SIC) 2026
 - 💻 **Project:** SIC Mini-Project — FocusFlow
 - 🐙 **GitHub:** [ankitprajapati29](https://github.com/ankitprajapati29)
-- 🌐 **Live Website:** [Open FocusFlow](https://ankitprajapati29.github.io/FocusFlow-Smart-Student-Study-Planner-with-Pomodoro-Timer/)
+- 🌐 **Live Website:** [Open FocusFlow](https://ankitprajapati29.github.io/FocusFlow/)
 
 ---
 
